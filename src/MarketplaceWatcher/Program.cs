@@ -1,7 +1,7 @@
-using MarketplaceWatcher;
+using MarketplaceWatcher.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+builder.Services.AddHostedService<PollingWorker>();
 
 var host = builder.Build();
 host.Run();
