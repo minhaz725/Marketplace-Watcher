@@ -1,4 +1,4 @@
-# CLAUDE.md — Marketplace Watcher (a .NET + React learning project / portfolio piece)
+# CLAUDE.md — Marketplace Watcher (a .NET + React  project)
 
 > Source of truth for how Claude Code should build this **with** me, not just **for** me.
 > Read §3 ("How to teach me") before writing any code.
