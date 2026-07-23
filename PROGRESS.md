@@ -44,8 +44,22 @@
 - Added `Api/Endpoints.cs`: a `MapWatcherEndpoints(this IEndpointRouteBuilder app)` extension method, called once from `Program.cs`, holding a `GET /health` → `200 {"status":"healthy"}`. This is where Phase 13's `/api/listings`, `/api/watches`, `/api/status`, `/api/poll` will be added.
 - ▶ Verify passed: `dotnet run`, `curl localhost:5000/health` → `200 {"status":"healthy"}`, while the `PollingWorker` heartbeat kept logging in the same process.
 
+### Phase 4 — EF Core + SQLite dedup store (test-first)
+- Added `tests/MarketplaceWatcher.Tests` (xUnit), wired into `MarketplaceWatcher.slnx`, project-referencing the main project — the JUnit-module equivalent.
+- `Domain/Listing.cs` — a `record` with a `Signature` computed property: SHA-256 of normalized (lowercased/trimmed) `title|price|location`, **deliberately excluding `Url`** (CLAUDE.md §8 — dedup on content, never URL/listing-id). Written test-first (`ListingTests.cs`, 5 cases).
+- Added `Microsoft.EntityFrameworkCore.Sqlite` + `.Design` packages. Also pinned `SQLitePCLRaw.bundle_e_sqlite3` to `3.0.4` — the version EF Core 10 pulls transitively (`2.1.11`) has a known high-severity NuGet advisory (GHSA-2m69-gcr7-jv3q); the pin flows to the test project automatically via its project reference.
+- `Data/Seen.cs` (entity) + `Data/WatcherDbContext.cs`: `DbSet<Seen>` keyed on `Signature` via Fluent API (`HasKey`); `GetNewAsync(IEnumerable<Listing>)` queries which candidate signatures are already in `Seen` (`.Contains` → SQL `IN`), returns the unseen ones, and records them in the same call (`AddRange` + `SaveChangesAsync`). Written test-first against an in-memory SQLite connection (`WatcherDbContextTests.cs`, 3 cases — including a mixed seen/new batch).
+- First migration: `dotnet ef migrations add InitialCreate` (needed the `dotnet-ef` global tool installed) — contrasted with Flyway: EF generates the `Up`/`Down` SQL from a diff against `WatcherDbContextModelSnapshot.cs` (the current-model bookkeeping file), rather than you hand-writing SQL that Flyway applies directly.
+- `appsettings.json` gained `ConnectionStrings:Watcher` = `"Data Source=watcher.db"`; `Program.cs` registers `WatcherDbContext` via `AddDbContext` (**scoped** — noted gotcha for Phase 5, since `PollingWorker` is a singleton) and calls `Database.Migrate()` inside a manually-created DI scope on startup.
+- `.gitignore`: added `*.db`/`*.db-shm`/`*.db-wal` (SQLite runtime files, not source).
+- ▶ Verify passed: 8/8 xUnit tests green (including "run twice → second call returns 0 new"); `dotnet run` against the real SQLite file applies the migration and creates the `Seen` table (confirmed via EF's SQL command logging).
+
 ### Commits (author = minhaz <minhaz725@gmail.com>, no co-author)
 ```
+b421199 chore: ignore local SQLite data files
+ef6605d feat: add EF Core SQLite dedup store
+3e34b7b feat: add Listing domain record with content-based signature
+c6e30f9 test: scaffold xUnit test project
 408299b feat: add Minimal API /health endpoint alongside the worker
 85023a1 docs: record Phase 2 completion, point handover at Phase 3
 cbbb316 chore: replace Banner demo config with real watch list
@@ -60,41 +74,46 @@ c64cedf chore: scaffold .NET 10 worker service solution
 ```
 marketplace-watcher/
 ├─ CLAUDE.md · PROGRESS.md · README.md
-├─ MarketplaceWatcher.slnx            # solution (root)
-└─ src/MarketplaceWatcher/
-   ├─ MarketplaceWatcher.csproj        # net10.0; Nullable + ImplicitUsings on; <UserSecretsId>; FrameworkReference Microsoft.AspNetCore.App
-   ├─ Program.cs                       # WebApplication host; binds WatcherOptions; registers PollingWorker; maps API routes
-   ├─ appsettings.json                 # base config — real Watcher section (PollIntervalSeconds, Location, Watches)
-   ├─ appsettings.Development.json      # dev override (Logging only; Banner demo retired)
-   ├─ Properties/launchSettings.json    # dev-only launch profile (sets DOTNET_ENVIRONMENT=Development)
-   ├─ Config/WatcherOptions.cs          # WatcherOptions / Watch / GeoPoint — Options pattern POCOs
-   ├─ Api/Endpoints.cs                 # MapWatcherEndpoints extension — GET /health
-   └─ Worker/PollingWorker.cs          # BackgroundService heartbeat; consumes IOptions<WatcherOptions>
+├─ MarketplaceWatcher.slnx            # solution (root); references both src and tests projects
+├─ src/MarketplaceWatcher/
+│  ├─ MarketplaceWatcher.csproj        # net10.0; Nullable + ImplicitUsings on; <UserSecretsId>; FrameworkReference Microsoft.AspNetCore.App; EF Core Sqlite/.Design
+│  ├─ Program.cs                       # WebApplication host; binds WatcherOptions; registers WatcherDbContext + PollingWorker; migrates DB; maps API routes
+│  ├─ appsettings.json                 # base config — Watcher section + ConnectionStrings:Watcher
+│  ├─ appsettings.Development.json      # dev override (Logging only; Banner demo retired)
+│  ├─ Properties/launchSettings.json    # dev-only launch profile (sets DOTNET_ENVIRONMENT=Development)
+│  ├─ Config/WatcherOptions.cs          # WatcherOptions / Watch / GeoPoint — Options pattern POCOs
+│  ├─ Domain/Listing.cs                # record with content Signature (SHA-256, excludes Url)
+│  ├─ Data/Seen.cs, WatcherDbContext.cs # Seen table keyed on Signature; GetNewAsync dedup query
+│  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate)
+│  ├─ Api/Endpoints.cs                 # MapWatcherEndpoints extension — GET /health
+│  └─ Worker/PollingWorker.cs          # BackgroundService heartbeat; consumes IOptions<WatcherOptions>
+└─ tests/MarketplaceWatcher.Tests/
+   ├─ Domain/ListingTests.cs           # Signature test-first (5 cases)
+   └─ Data/WatcherDbContextTests.cs    # GetNewAsync dedup test-first (3 cases, in-memory SQLite)
 ```
-(User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken`.)
+(User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken`. `watcher.db` is a runtime artifact, gitignored.)
 
 ## How to run / verify quickly
 ```bash
-dotnet build src/MarketplaceWatcher
-dotnet run --project src/MarketplaceWatcher        # Development (uses launchSettings) → DEV banner + heartbeat
+dotnet build
+dotnet test tests/MarketplaceWatcher.Tests               # xUnit — pure logic + dedup, test-first
+dotnet run --project src/MarketplaceWatcher               # Development (uses launchSettings) → migrates DB, heartbeat, /health
 ```
 Note: a plain `.NET` console app ignores SIGPIPE, so piping to `head` won't stop it — stop with Ctrl-C (or run in background and kill).
+`dotnet-ef` is a **global tool** (`dotnet tool install --global dotnet-ef`); its install path (`~/.dotnet/tools`) may need adding to `PATH` for a new shell.
 
 ---
 
-## ▶ NEXT: Phase 4 — EF Core + SQLite dedup store `[core]` (test-first)
-Goal: `WatcherDbContext` with a `Seen` table keyed on a **content `Signature`** (not URL/listing-id — CLAUDE.md §8), a first EF Core migration, and a `GetNewAsync` that filters out already-seen listings. Write the xUnit test for the dedup logic first (TDD, per CLAUDE.md §8/§11).
+## ▶ NEXT: Phase 5 — BackgroundService polling loop `[anchor]`
+Goal: flesh out `PollingWorker`'s loop — jittered delay instead of the fixed 2s heartbeat, and (the actual new concept) manually creating a **DI scope** so the singleton worker can resolve the **scoped** `WatcherDbContext` added in Phase 4.
 
-Concrete steps (CLAUDE.md §9 Phase 4, §7 target structure):
-1. Add the `tests/MarketplaceWatcher.Tests` xUnit project (doesn't exist yet) + reference it from the solution.
-2. Add `Domain/Listing.cs` — a `record` with the fields dedup needs, and a `Signature` (normalized content hash of title+price+location per CLAUDE.md §8) — write its test first.
-3. Add `Microsoft.EntityFrameworkCore.Sqlite` + `Microsoft.EntityFrameworkCore.Design` package references.
-4. Add `Data/WatcherDbContext.cs` — `DbSet<Seen>` (or similar), keyed on `Signature`.
-5. `dotnet ef migrations add InitialCreate` — teach: EF **code-first** migrations vs Flyway's **SQL-first** migrations (contrast explicitly, CLAUDE.md §4/§13).
-6. `GetNewAsync(IEnumerable<Listing>)` — given candidate listings, returns only those whose `Signature` isn't already in `Seen`, then records the new ones.
-7. ▶ Verify (CLAUDE.md §9 Phase 4): running the same candidate batch twice → second run finds 0 new; dedup logic covered by a test.
+Concrete steps (CLAUDE.md §9 Phase 5):
+1. Replace the fixed `Task.Delay(TimeSpan.FromSeconds(2), stoppingToken)` with a jittered delay (CLAUDE.md §5: ~60–120s jittered) — e.g. `Random.Shared.Next(60, 120)` seconds. Keep it short (e.g. env-overridable or just a few seconds) while iterating locally; the real interval is `WatcherOptions.PollIntervalSeconds`.
+2. **The core teaching point:** inject `IServiceScopeFactory` (not `WatcherDbContext` directly — a singleton can't hold a scoped service) into `PollingWorker`; each loop iteration does `using var scope = scopeFactory.CreateScope();` then resolves `WatcherDbContext` from `scope.ServiceProvider`. Anchor: similar in spirit to a Spring `@Scheduled` method manually opening a transaction/session per run rather than relying on request-scoped injection.
+3. Each iteration: call `GetNewAsync` with an empty/placeholder candidate list for now (real scraped candidates arrive in Phase 8) and log "polled, {Count} new".
+4. ▶ Verify (CLAUDE.md §9 Phase 5): log shows "polled, 0 new" on the jittered interval; Ctrl-C still shuts down cleanly (re-confirm — scope creation/disposal per iteration shouldn't affect graceful shutdown).
 
-Teaching reminders for Phase 4: it's `[core]` → smaller steps, extra care, test-first. Anchor to Spring Data JPA + Postgres/Flyway, but don't assume EF Core mechanics transfer 1:1 (DbContext lifetime/scoping is the next phase's gotcha, not this one — PollingWorker doesn't touch the DbContext yet).
+Teaching reminders for Phase 5: it's `[anchor]` — the polling loop shape is familiar from `@Scheduled`, but the singleton-vs-scoped DI mechanics are new and worth slowing down for; this is the gotcha flagged back in Phase 4.
 
-## Roadmap after Phase 4 (one per session)
-5 polling loop w/ scope · 6 Playwright CDP attach · 7 parse + 3 defenses (crux, test-first) · 8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
+## Roadmap after Phase 5 (one per session)
+6 Playwright CDP attach · 7 parse + 3 defenses (crux, test-first) · 8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
