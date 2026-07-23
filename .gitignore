@@ -6,6 +6,11 @@
 # dotenv files
 .env
 
+# local SQLite data (created by Database.Migrate() at runtime, not source)
+*.db
+*.db-shm
+*.db-wal
+
 # User-specific files
 *.rsuser
 *.suo
