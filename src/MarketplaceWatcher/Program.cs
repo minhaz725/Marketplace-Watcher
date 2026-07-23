@@ -1,9 +1,12 @@
+using MarketplaceWatcher.Api;
 using MarketplaceWatcher.Config;
 using MarketplaceWatcher.Worker;
+using Microsoft.AspNetCore.Builder;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<WatcherOptions>(builder.Configuration.GetSection(WatcherOptions.Section));
 builder.Services.AddHostedService<PollingWorker>();
 
-var host = builder.Build();
-host.Run();
+var app = builder.Build();
+app.MapWatcherEndpoints();
+app.Run();
