@@ -54,6 +54,13 @@
 - `.gitignore`: added `*.db`/`*.db-shm`/`*.db-wal` (SQLite runtime files, not source).
 - ▶ Verify passed: 8/8 xUnit tests green (including "run twice → second call returns 0 new"); `dotnet run` against the real SQLite file applies the migration and creates the `Seen` table (confirmed via EF's SQL command logging).
 
+### Phase 5 — BackgroundService polling loop
+- `PollingWorker`'s fixed 2s heartbeat delay replaced with a jittered delay: `Random.Shared.Next(baseInterval - 30, baseInterval + 30)` seconds, where `baseInterval` = `WatcherOptions.PollIntervalSeconds` (90 by default → 60–120s range, matching CLAUDE.md §5).
+- **The core concept:** `WatcherDbContext` is registered **Scoped** (Phase 4), but `PollingWorker` is a **Singleton** (`AddHostedService`). Injecting `WatcherDbContext` directly into `PollingWorker`'s constructor throws `InvalidOperationException: Cannot consume scoped service 'WatcherDbContext' from singleton 'PollingWorker'` at startup — .NET refuses to let a whole-app-lifetime object hold a should-be-short-lived unit-of-work. Fix: inject `IServiceScopeFactory` instead (itself singleton-safe — it's just a factory), and each loop iteration does `using var scope = scopeFactory.CreateScope()` → `scope.ServiceProvider.GetRequiredService<WatcherDbContext>()` → use it → dispose at the end of the `using` block. Anchor: same reasoning as why Spring scopes `EntityManager` per-request/per-transaction instead of wiring one as a singleton bean — the underlying DB *connection* is pooled/reused either way (analogous to a singleton `DataSource`), but the `DbContext`/`EntityManager` on top keeps an identity map that grows unbounded and can serve stale cached reads if kept alive forever.
+- Each iteration now calls `db.GetNewAsync(Enumerable.Empty<Listing>(), stoppingToken)` (placeholder empty candidate list — real scraped candidates arrive in Phase 8) and logs `"polled, {Count} new"`.
+- Needed an explicit `using Microsoft.Extensions.DependencyInjection;` in `PollingWorker.cs` for `IServiceScopeFactory`/`GetRequiredService` — same "Worker SDK's implicit-usings don't cover this namespace" gotcha as the ASP.NET Core `.Builder` one from Phase 3.
+- ▶ Verify passed: EF Core's SQL command logging shows a real `SELECT "s"."Signature" FROM "Seen" AS "s" WHERE 0` per iteration (the `WHERE 0` is EF's translation of "empty candidate list → no signatures to match"), followed by `polled, 0 new`, repeating on the jittered interval; clean Ctrl-C shutdown confirmed.
+
 ### Commits (author = minhaz <minhaz725@gmail.com>, no co-author)
 ```
 b421199 chore: ignore local SQLite data files
@@ -86,7 +93,7 @@ marketplace-watcher/
 │  ├─ Data/Seen.cs, WatcherDbContext.cs # Seen table keyed on Signature; GetNewAsync dedup query
 │  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate)
 │  ├─ Api/Endpoints.cs                 # MapWatcherEndpoints extension — GET /health
-│  └─ Worker/PollingWorker.cs          # BackgroundService heartbeat; consumes IOptions<WatcherOptions>
+│  └─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; scoped WatcherDbContext via IServiceScopeFactory
 └─ tests/MarketplaceWatcher.Tests/
    ├─ Domain/ListingTests.cs           # Signature test-first (5 cases)
    └─ Data/WatcherDbContextTests.cs    # GetNewAsync dedup test-first (3 cases, in-memory SQLite)
@@ -104,16 +111,17 @@ Note: a plain `.NET` console app ignores SIGPIPE, so piping to `head` won't stop
 
 ---
 
-## ▶ NEXT: Phase 5 — BackgroundService polling loop `[anchor]`
-Goal: flesh out `PollingWorker`'s loop — jittered delay instead of the fixed 2s heartbeat, and (the actual new concept) manually creating a **DI scope** so the singleton worker can resolve the **scoped** `WatcherDbContext` added in Phase 4.
+## ▶ NEXT: Phase 6 — Playwright .NET: attach over CDP `[core]`
+Goal: add `Microsoft.Playwright`, write a `CdpConnection` that attaches to *your* already-running, already-logged-in secondary-account Chrome (CLAUDE.md §5 — `--remote-debugging-port=9222`), grabs the first existing browser context (never creates a new one, never logs in), opens a page, navigates to a Marketplace search URL, and dumps `innerText` so we can see raw scraped text end-to-end before Phase 7 does real parsing.
 
-Concrete steps (CLAUDE.md §9 Phase 5):
-1. Replace the fixed `Task.Delay(TimeSpan.FromSeconds(2), stoppingToken)` with a jittered delay (CLAUDE.md §5: ~60–120s jittered) — e.g. `Random.Shared.Next(60, 120)` seconds. Keep it short (e.g. env-overridable or just a few seconds) while iterating locally; the real interval is `WatcherOptions.PollIntervalSeconds`.
-2. **The core teaching point:** inject `IServiceScopeFactory` (not `WatcherDbContext` directly — a singleton can't hold a scoped service) into `PollingWorker`; each loop iteration does `using var scope = scopeFactory.CreateScope();` then resolves `WatcherDbContext` from `scope.ServiceProvider`. Anchor: similar in spirit to a Spring `@Scheduled` method manually opening a transaction/session per run rather than relying on request-scoped injection.
-3. Each iteration: call `GetNewAsync` with an empty/placeholder candidate list for now (real scraped candidates arrive in Phase 8) and log "polled, {Count} new".
-4. ▶ Verify (CLAUDE.md §9 Phase 5): log shows "polled, 0 new" on the jittered interval; Ctrl-C still shuts down cleanly (re-confirm — scope creation/disposal per iteration shouldn't affect graceful shutdown).
+Concrete steps (CLAUDE.md §9 Phase 6):
+1. Add the `Microsoft.Playwright` NuGet package to the main project — no browser download needed (`playwright install` is for *launching* browsers; we're only *attaching* to one you start yourself).
+2. Before running anything, start the secondary-account Chrome per CLAUDE.md §5 (`--remote-debugging-port=9222 --user-data-dir=...`), logged into the secondary FB account.
+3. `Scraping/CdpConnection.cs`: `Playwright.CreateAsync()` → `playwright.Chromium.ConnectOverCDPAsync("http://localhost:9222")` → `browser.Contexts[0]` (reuse the existing logged-in context — **never** `NewContextAsync()`) → `context.NewPageAsync()`.
+4. Navigate to a Marketplace search URL (e.g. free-near-me), then read `page.InnerTextAsync("body")` (or similar) and log/dump it.
+5. ▶ Verify (CLAUDE.md §9 Phase 6): a page in *your* logged-in Chrome actually loads (visible in the Chrome window you started); we print its text to the console.
 
-Teaching reminders for Phase 5: it's `[anchor]` — the polling loop shape is familiar from `@Scheduled`, but the singleton-vs-scoped DI mechanics are new and worth slowing down for; this is the gotcha flagged back in Phase 4.
+Teaching reminders for Phase 6: it's `[core]` — new material (Playwright, CDP attach) even though the *shape* anchors to your Java `connectOverCDP()` + `contexts().get(0)` pattern from House Hunt. Go slow on: what CDP is, why "attach" (not "launch") matters for using a real logged-in session safely, and the .NET async Playwright API mechanics (`IPlaywright`, `IBrowser`, `IBrowserContext`, `IPage`).
 
-## Roadmap after Phase 5 (one per session)
-6 Playwright CDP attach · 7 parse + 3 defenses (crux, test-first) · 8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
+## Roadmap after Phase 6 (one per session)
+7 parse + 3 defenses (crux, test-first) · 8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
