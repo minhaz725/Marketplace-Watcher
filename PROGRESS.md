@@ -61,6 +61,13 @@
 - Needed an explicit `using Microsoft.Extensions.DependencyInjection;` in `PollingWorker.cs` for `IServiceScopeFactory`/`GetRequiredService` — same "Worker SDK's implicit-usings don't cover this namespace" gotcha as the ASP.NET Core `.Builder` one from Phase 3.
 - ▶ Verify passed: EF Core's SQL command logging shows a real `SELECT "s"."Signature" FROM "Seen" AS "s" WHERE 0` per iteration (the `WHERE 0` is EF's translation of "empty candidate list → no signatures to match"), followed by `polled, 0 new`, repeating on the jittered interval; clean Ctrl-C shutdown confirmed.
 
+### Phase 6 — Playwright .NET: attach over CDP
+- Added `Microsoft.Playwright` package (no `playwright install` needed — we only *attach* to a Chrome the user starts, never launch one).
+- `Scraping/CdpConnection.cs`: `IAsyncDisposable` wrapper. `ConnectAsync` does `Playwright.CreateAsync()` → `playwright.Chromium.ConnectOverCDPAsync(cdpUrl)`; exposes `Context` = `_browser.Contexts[0]` (the existing logged-in context — never `NewContextAsync()`). `DisposeAsync` calls `_browser.CloseAsync()` — confirmed via Playwright docs this **disconnects** rather than quitting Chrome when the browser was obtained via CDP attach (important per CLAUDE.md §5 — never actually close the user's real browser).
+- Temporary verification hook in `Program.cs`, gated behind `--test-cdp` CLI arg: connects, opens a new page in the existing context, navigates to `facebook.com/marketplace/`, dumps `page.InnerTextAsync("body")` (first 500 chars) to console, then returns (skips the web host / worker). Explicitly commented as Phase 6 scaffolding — will be replaced by the real per-watch pipeline in Phase 8.
+- **Real-world friction (worth remembering):** the secondary-account Chrome must be started manually first with the exact CLAUDE.md §5 command (`--remote-debugging-port=9222 --user-data-dir="$HOME/.fb-secondary-chrome"`) and logged in *in that window* — pointing this at an already-running daily-driver Chrome (real personal account, many tabs) was raised and explicitly rejected: CDP with no auth exposes every open tab/cookie to any local process, and the isolated secondary-account profile exists specifically to keep blast radius near-zero. `curl http://localhost:9222/json/version` (and `/json/list`) are the quick sanity checks that Chrome is actually listening and what pages/tabs currently exist before trying to attach.
+- ▶ Verify passed: a new tab opened in the user's real, running secondary-account Chrome window (not a separate Playwright-launched browser); console printed `Page text length: 1542` followed by real Marketplace page text (categories, location, nav) — confirms attach + read-only navigation works end-to-end.
+
 ### Commits (author = minhaz <minhaz725@gmail.com>, no co-author)
 ```
 b421199 chore: ignore local SQLite data files
@@ -93,6 +100,7 @@ marketplace-watcher/
 │  ├─ Data/Seen.cs, WatcherDbContext.cs # Seen table keyed on Signature; GetNewAsync dedup query
 │  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate)
 │  ├─ Api/Endpoints.cs                 # MapWatcherEndpoints extension — GET /health
+│  ├─ Scraping/CdpConnection.cs        # ConnectOverCDPAsync wrapper; reuses existing browser Context[0]
 │  └─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; scoped WatcherDbContext via IServiceScopeFactory
 └─ tests/MarketplaceWatcher.Tests/
    ├─ Domain/ListingTests.cs           # Signature test-first (5 cases)
@@ -111,17 +119,16 @@ Note: a plain `.NET` console app ignores SIGPIPE, so piping to `head` won't stop
 
 ---
 
-## ▶ NEXT: Phase 6 — Playwright .NET: attach over CDP `[core]`
-Goal: add `Microsoft.Playwright`, write a `CdpConnection` that attaches to *your* already-running, already-logged-in secondary-account Chrome (CLAUDE.md §5 — `--remote-debugging-port=9222`), grabs the first existing browser context (never creates a new one, never logs in), opens a page, navigates to a Marketplace search URL, and dumps `innerText` so we can see raw scraped text end-to-end before Phase 7 does real parsing.
+## ▶ NEXT: Phase 7 — Parse cards + the three defenses `[core]` (test-first) ⟵ crux
+This is flagged in CLAUDE.md as the hardest phase. Goal: turn the raw scraped DOM into real `Listing`s.
+1. **Virtualized feed** → harvest each card *as it renders* while scrolling (Marketplace only keeps a window of cards in the DOM at once).
+2. **CSS-shuffled decoy text** → `TextReconstructor`: sort visible chars by on-screen x-position; drop hidden/off-screen nodes (Marketplace scrambles text order in the DOM and uses CSS to visually reorder it, to defeat naive scrapers).
+3. **Content signature** → hash of normalized (title+price+location) — already built in Phase 4 (`Listing.Signature`); this phase is about producing correct `Listing`s to feed it.
+Then apply `excludeKeywords`/`mustIncludeKeywords`/price/free filters (CLAUDE.md §6) to the parsed listings.
+Capture the **live** Marketplace DOM structure here (using the `--test-cdp` scaffold from Phase 6 as a starting point) since CLAUDE.md §12 flags current selectors as a known unknown.
+▶ Verify (CLAUDE.md §9 Phase 7): parsed listings + signatures match what's visually on screen; `TextReconstructor` + filters have unit tests (test-first, per CLAUDE.md §8).
 
-Concrete steps (CLAUDE.md §9 Phase 6):
-1. Add the `Microsoft.Playwright` NuGet package to the main project — no browser download needed (`playwright install` is for *launching* browsers; we're only *attaching* to one you start yourself).
-2. Before running anything, start the secondary-account Chrome per CLAUDE.md §5 (`--remote-debugging-port=9222 --user-data-dir=...`), logged into the secondary FB account.
-3. `Scraping/CdpConnection.cs`: `Playwright.CreateAsync()` → `playwright.Chromium.ConnectOverCDPAsync("http://localhost:9222")` → `browser.Contexts[0]` (reuse the existing logged-in context — **never** `NewContextAsync()`) → `context.NewPageAsync()`.
-4. Navigate to a Marketplace search URL (e.g. free-near-me), then read `page.InnerTextAsync("body")` (or similar) and log/dump it.
-5. ▶ Verify (CLAUDE.md §9 Phase 6): a page in *your* logged-in Chrome actually loads (visible in the Chrome window you started); we print its text to the console.
+Teaching reminders for Phase 7: it's `[core]` and the crux of the whole scraping half of the project — go slow, this is genuinely new (no direct Spring/House-Hunt shortcut for the DOM-shuffling defense specifically, even though the *concept* of "the site tries to fight scrapers" carries over).
 
-Teaching reminders for Phase 6: it's `[core]` — new material (Playwright, CDP attach) even though the *shape* anchors to your Java `connectOverCDP()` + `contexts().get(0)` pattern from House Hunt. Go slow on: what CDP is, why "attach" (not "launch") matters for using a real logged-in session safely, and the .NET async Playwright API mechanics (`IPlaywright`, `IBrowser`, `IBrowserContext`, `IPage`).
-
-## Roadmap after Phase 6 (one per session)
-7 parse + 3 defenses (crux, test-first) · 8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
+## Roadmap after Phase 7 (one per session)
+8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
