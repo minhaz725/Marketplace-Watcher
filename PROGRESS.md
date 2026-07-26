@@ -102,6 +102,7 @@ marketplace-watcher/
 │  ├─ Api/Endpoints.cs, CreateWatchRequest.cs  # /health, /api/watches (GET/POST/DELETE)
 │  ├─ Scraping/CdpConnection.cs        # ConnectOverCDPAsync wrapper; reuses existing browser Context[0]
 │  ├─ Scraping/CardParser.cs           # parses aria-label → ScrapedCard(Title, Price, Location, ListingId)
+│  ├─ Scraping/WatchMatcher.cs         # ScrapedCard vs WatchEntity: freeOnly/minPrice/maxPrice/keyword filters
 │  ├─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; reads active watches from DB
 │  └─ Worker/PollSignal.cs             # Channel-based signal so API calls can wake the poll loop early
 └─ tests/MarketplaceWatcher.Tests/
@@ -109,6 +110,7 @@ marketplace-watcher/
    ├─ Data/WatcherDbContextTests.cs    # GetNewAsync dedup test-first (3 cases, in-memory SQLite)
    ├─ Data/WatchEntityTests.cs         # string[] JSON round-trip, IsActive filtering
    ├─ Scraping/CardParserTests.cs      # aria-label parsing against real captured fixtures
+   ├─ Scraping/WatchMatcherTests.cs    # filter matching (freeOnly/price/keywords), 9 cases
    └─ Worker/PollSignalTests.cs        # early-wake vs. full-delay behaviour
 ```
 (User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken`. `watcher.db` is a runtime artifact, gitignored.)
@@ -129,7 +131,8 @@ Note: a plain `.NET` console app ignores SIGPIPE, so piping to `head` won't stop
 - **Finding that changed the plan:** no CSS-shuffled decoy text on feed cards across 4 real captured cards (free + priced). CLAUDE.md's "decoy text" defense turned out to be from the user's House Hunt experience with **FB Groups**, not Marketplace — confirmed with the user rather than building `TextReconstructor` against a hypothetical. Decided to work from concrete evidence instead of the original phase description.
 - **Discovery:** every card's `aria-label` attribute contains clean, non-shuffled, comma-separated `"{title}, NZ${price}, {location}, listing {id}"` — accessibility text can't be visually scrambled without breaking screen readers, so it's a far more robust extraction point than reconstructing visible spans.
 - `Scraping/CardParser.cs`: `[GeneratedRegex]` (source-generated regex, compiled at build time — newer idiom than `Regex.Compiled`) parses `aria-label` into a `ScrapedCard(Title, Price, Location, ListingId)` record. Title is matched non-greedily up to the first `", NZ$"` so it doesn't break on locations like "Auckland, New Zealand" that themselves contain a comma. Test-first against the real captured fixtures (5 cases, including a real malformed seller title and a thousands-separator price).
-- **Still open for Phase 7:** apply `excludeKeywords`/`mustIncludeKeywords`/price/free filters (CLAUDE.md §6) to a `ScrapedCard` against a watch — not yet built. Virtualized-feed scrolling (harvest cards as they render) also not yet built.
+- `Scraping/WatchMatcher.cs`: `Matches(ScrapedCard, WatchEntity)` applies `freeOnly`/`minPrice`/`maxPrice`/`mustIncludeKeywords`/`excludeKeywords` (CLAUDE.md §6), case-insensitive keyword matching via `string.Contains(..., StringComparison.OrdinalIgnoreCase)`. Test-first, 9 cases. `radiusKm` deliberately not applied yet — `ScrapedCard.Location` is a display string ("Auckland, New Zealand"), not coordinates; real distance filtering needs geocoding, which CLAUDE.md defers to Phase 10.
+- **Still open for Phase 7:** virtualized-feed scrolling (harvest cards as they render while scrolling, rather than just the first screenful) — not yet built. Everything else (parse card → `ScrapedCard`, filter against `WatchEntity`) is done. 26/26 tests green.
 
 ### Design change — dynamic, DB-backed watches (subscription model)
 Mid-Phase-7, the user asked to change how watches are managed: instead of a static `Watches` list in `appsettings.json` (bound once at startup, requires a restart to change), watches are now created/stopped at runtime via the API — closer to a subscription model. Discussed and confirmed with the user first (see plan file, since implemented): **kept scraping strictly sequential** (one shared loop, one page at a time) even though watches are now dynamic — spawning one worker per watch would violate CLAUDE.md §5's "gentle, one page at a time" rule, since it'd mean concurrent Playwright pages against one Chrome session. Config watches retired entirely (DB-only going forward), not seeded from appsettings.
