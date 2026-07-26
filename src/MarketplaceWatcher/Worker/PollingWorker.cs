@@ -1,6 +1,7 @@
 using MarketplaceWatcher.Config;
 using MarketplaceWatcher.Data;
 using MarketplaceWatcher.Domain;
+using MarketplaceWatcher.Scraping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -12,6 +13,7 @@ public class PollingWorker(
     IOptions<WatcherOptions> options,
     IConfiguration config,
     IServiceScopeFactory scopeFactory,
+    IMarketplaceScraper scraper,
     PollSignal pollSignal) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -33,8 +35,26 @@ public class PollingWorker(
                     watches.Count,
                     string.Join(", ", watches.Select(w => w.Name ?? "(free-only / match-all)")));
 
-                var newListings = await db.GetNewAsync(Enumerable.Empty<Listing>(), stoppingToken);
-                logger.LogInformation("polled, {Count} new", newListings.Count);
+                var allNew = new List<Listing>();
+
+                // Sequential, one watch (one page) at a time — CLAUDE.md section 5's
+                // "gentle scraping" rule, not just a Task.WhenAll-avoidance habit.
+                foreach (var watch in watches)
+                {
+                    var cards = await scraper.ScrapeAsync(watch, stoppingToken);
+                    var matched = cards
+                        .Where(card => WatchMatcher.Matches(card, watch))
+                        .Select(card => new Listing(
+                            card.Title,
+                            card.Price,
+                            card.Location,
+                            $"https://www.facebook.com/marketplace/item/{card.ListingId}/"))
+                        .ToList();
+
+                    allNew.AddRange(await db.GetNewAsync(matched, stoppingToken));
+                }
+
+                logger.LogInformation("polled, {Count} new", allNew.Count);
             }
 
             var jitteredSeconds = Random.Shared.Next(baseInterval - 30, baseInterval + 30);

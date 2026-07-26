@@ -103,6 +103,7 @@ marketplace-watcher/
 │  ├─ Scraping/CdpConnection.cs        # ConnectOverCDPAsync wrapper; reuses existing browser Context[0]
 │  ├─ Scraping/CardParser.cs           # parses aria-label → ScrapedCard(Title, Price, Location, ListingId)
 │  ├─ Scraping/WatchMatcher.cs         # ScrapedCard vs WatchEntity: freeOnly/minPrice/maxPrice/keyword filters
+│  ├─ Scraping/IMarketplaceScraper.cs, MarketplaceScraper.cs  # per-watch URL + scroll-harvest, singleton CDP connection
 │  ├─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; reads active watches from DB
 │  └─ Worker/PollSignal.cs             # Channel-based signal so API calls can wake the poll loop early
 └─ tests/MarketplaceWatcher.Tests/
@@ -146,5 +147,12 @@ Mid-Phase-7, the user asked to change how watches are managed: instead of a stat
 - ▶ Verified end-to-end: ran the app, `POST /api/watches` with a sofa watch → log immediately showed `1 active watch(es): sofa` (no restart, no waiting for the jittered interval) → `GET /api/watches` round-tripped it correctly including the `ExcludeKeywords` array.
 - New tests: `WatchEntityTests` (string-array JSON round-trip via a second `DbContext` sharing the same open connection, to force a real DB read rather than reading back the change tracker's in-memory copy; `IsActive` filtering), `PollSignalTests` (wakes early when triggered; still respects the delay when never triggered). 17/17 tests green.
 
-## Roadmap after Phase 7 (one per session)
-Finish Phase 7 (filter-matching against `WatchEntity`, virtualized-feed scrolling) · 8 wire pipeline (now: scrape → `CardParser` → filter → `GetNewAsync`, watches sourced from DB) · 9 Telegram · 10 radius · 11 polish/docs · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
+### Phase 8 — Wire the real pipeline `[anchor]`
+- `Scraping/IMarketplaceScraper.cs` + `MarketplaceScraper.cs`: `ScrapeAsync(WatchEntity)` builds a search URL (`freeOnly` → `/marketplace/category/free`, else `/marketplace/search?query={watch.Name}`), opens a page on the (lazily-connected, reused) `CdpConnection`, and does the virtualized-feed scroll-harvest CLAUDE.md §9 Phase 7 called for: `page.Mouse.WheelAsync` to trigger real scroll events (more reliable than `window.scrollBy` for waking Marketplace's infinite-scroll listener), harvest currently-rendered cards' `aria-label`s via `CardParser`, dedup by `ListingId` across scrolls (a card can still be on-screen across two consecutive harvests), repeat 5×.
+- `MarketplaceScraper` registered as a **singleton** (`IMarketplaceScraper`) — connecting over CDP spins up a Playwright driver process, too expensive to redo every ~90s poll, so the same `CdpConnection` is reused across all future polls; only opens/closes a fresh page per watch.
+- `PollingWorker`: the loop now actually does the real thing per active watch — `scraper.ScrapeAsync(watch)` → `WatchMatcher.Matches` filters the cards → maps matches to `Listing` → `db.GetNewAsync`. Deliberately still a `foreach` (sequential `await`, not `Task.WhenAll`/parallel) — CLAUDE.md §5's "one page at a time" rule applies just as much to N dynamically-created watches as it did to the original static config list.
+- Removed the temporary `--test-cdp`/`--dump-cards` scaffolding from `Program.cs` (Phase 6/7 reconnaissance-only, as their own comments promised) now that the real pipeline replaces them.
+- ▶ Verified end-to-end against the real secondary-account Chrome: created a "sofa" watch (`$0–$200`, excluding wanted/parts/cover-only) via the API → log showed `Scraping https://www.facebook.com/marketplace/search?query=sofa for watch sofa` → `polled, 12 new` → confirmed via `sqlite3 watcher.db` that real listing titles (including one with an emoji, confirming Unicode handled fine) landed in `Seen`. Created a second ("free stuff") watch to trigger an immediate re-poll via `PollSignal` and confirmed the pipeline runs per-watch, sequentially. Deleted (soft-disabled) the throwaway test watch afterward via `DELETE /api/watches/{id}`.
+
+## Roadmap after Phase 8 (one per session)
+9 Telegram · 10 radius (client-side distance filter — `ScrapedCard.Location` is currently a display string, not coordinates, so this needs geocoding) · 11 polish/docs · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
