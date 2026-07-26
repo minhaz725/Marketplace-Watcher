@@ -197,6 +197,15 @@ Started as the radius/distance-filter phase. Reconnaissance killed that plan and
 
 **Follow-up worth considering (not done):** Marketplace supports a `sortBy=creation_time_descending` URL param. If it works — and unlike `radius` it's a real UI feature, so test it the same controlled way — newest listings would sort to the top, and the deep 12-round scroll every ~90s could shrink to 2–3 rounds. That's both gentler (CLAUDE.md §5) and faster.
 
+### Bugfix — intra-batch signature collisions crashed the whole host
+Surfaced immediately after Phase 10 by a new **"Full Mirror"** watch: `InvalidOperationException: The instance of entity type 'Seen' cannot be tracked because another instance with the same key value for {'Signature'} is already being tracked`.
+- **Cause:** `GetNewAsync` deduped candidates against the **database** but not against **each other**. `Signature` deliberately excludes `Url` (CLAUDE.md §8), so several genuinely-distinct Marketplace listings sharing a title/price/location ("Full Mirror", $40, "Auckland, New Zealand") collapse to one primary key — and `AddRange` was handed two entities with the same key.
+- **Latent since Phase 4**, but only triggered now: the "Full Mirror" search has unusually repetitive titles, *and* Phase 10's harvest fix tripled batch sizes (49 vs ~20), so collisions became likely rather than rare.
+- **Fix:** one line — `candidates.DistinctBy(c => c.Signature)` before querying/adding. Semantically right, not just a crash patch: by our own dedup definition two identical-content listings *are* the same item, so returning both would also have sent duplicate Telegram alerts.
+- Test-first: reproduced the exact exception in a unit test (three same-signature listings in one batch) before fixing — no Facebook needed. Plus a second case covering intra-batch duplicates where one was already seen. **37/37 green.**
+- ▶ Verified live against the offending watch: `Harvested 49 listings in 7 scroll round(s) for watch Full Mirror` → `polled, 14 new`, 14 alerts delivered, no crash.
+- ⚠️ **Follow-up for Phase 11:** note *how* this failed — one exception in `ExecuteAsync` took down the **entire host** (`BackgroundServiceExceptionBehavior.StopHost` is the default). The watcher didn't degrade, it died. Phase 11's "error backoff" item should wrap the per-watch work in a try/catch so one bad watch skips its turn instead of stopping the app.
+
 ## ▶ NEXT: Phase 11 — polish + docs `[anchor]`
 Structured logging, error backoff, `/status`, graceful shutdown, README, on-call runbook, and **DECISIONS.md** — which now has three real ADRs queued up from Phases 9–10: (a) Telegram over WhatsApp, (b) at-most-once delivery, (c) radius is environmental.
 

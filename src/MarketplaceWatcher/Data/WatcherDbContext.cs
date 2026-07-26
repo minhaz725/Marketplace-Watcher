@@ -34,7 +34,11 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
 
     public async Task<List<Listing>> GetNewAsync(IEnumerable<Listing> candidates, CancellationToken cancellationToken = default)
     {
-        var candidateList = candidates.ToList();
+        // Collapse duplicates *within* the batch before touching the DB. Signature excludes
+        // Url by design (CLAUDE.md section 8), so several distinct Marketplace listings with
+        // the same title/price/location are one item as far as dedup is concerned. Without
+        // this, AddRange gets two entities sharing a primary key and EF throws.
+        var candidateList = candidates.DistinctBy(c => c.Signature).ToList();
         var signatures = candidateList.Select(c => c.Signature).ToList();
 
         var alreadySeen = await Seen
