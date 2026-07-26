@@ -97,14 +97,19 @@ marketplace-watcher/
 │  ├─ Properties/launchSettings.json    # dev-only launch profile (sets DOTNET_ENVIRONMENT=Development)
 │  ├─ Config/WatcherOptions.cs          # WatcherOptions / Watch / GeoPoint — Options pattern POCOs
 │  ├─ Domain/Listing.cs                # record with content Signature (SHA-256, excludes Url)
-│  ├─ Data/Seen.cs, WatcherDbContext.cs # Seen table keyed on Signature; GetNewAsync dedup query
-│  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate)
-│  ├─ Api/Endpoints.cs                 # MapWatcherEndpoints extension — GET /health
+│  ├─ Data/Seen.cs, WatcherDbContext.cs, WatchEntity.cs  # Seen (dedup) + Watches tables
+│  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate, AddWatches)
+│  ├─ Api/Endpoints.cs, CreateWatchRequest.cs  # /health, /api/watches (GET/POST/DELETE)
 │  ├─ Scraping/CdpConnection.cs        # ConnectOverCDPAsync wrapper; reuses existing browser Context[0]
-│  └─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; scoped WatcherDbContext via IServiceScopeFactory
+│  ├─ Scraping/CardParser.cs           # parses aria-label → ScrapedCard(Title, Price, Location, ListingId)
+│  ├─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; reads active watches from DB
+│  └─ Worker/PollSignal.cs             # Channel-based signal so API calls can wake the poll loop early
 └─ tests/MarketplaceWatcher.Tests/
    ├─ Domain/ListingTests.cs           # Signature test-first (5 cases)
-   └─ Data/WatcherDbContextTests.cs    # GetNewAsync dedup test-first (3 cases, in-memory SQLite)
+   ├─ Data/WatcherDbContextTests.cs    # GetNewAsync dedup test-first (3 cases, in-memory SQLite)
+   ├─ Data/WatchEntityTests.cs         # string[] JSON round-trip, IsActive filtering
+   ├─ Scraping/CardParserTests.cs      # aria-label parsing against real captured fixtures
+   └─ Worker/PollSignalTests.cs        # early-wake vs. full-delay behaviour
 ```
 (User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken`. `watcher.db` is a runtime artifact, gitignored.)
 
@@ -119,16 +124,24 @@ Note: a plain `.NET` console app ignores SIGPIPE, so piping to `head` won't stop
 
 ---
 
-## ▶ NEXT: Phase 7 — Parse cards + the three defenses `[core]` (test-first) ⟵ crux
-This is flagged in CLAUDE.md as the hardest phase. Goal: turn the raw scraped DOM into real `Listing`s.
-1. **Virtualized feed** → harvest each card *as it renders* while scrolling (Marketplace only keeps a window of cards in the DOM at once).
-2. **CSS-shuffled decoy text** → `TextReconstructor`: sort visible chars by on-screen x-position; drop hidden/off-screen nodes (Marketplace scrambles text order in the DOM and uses CSS to visually reorder it, to defeat naive scrapers).
-3. **Content signature** → hash of normalized (title+price+location) — already built in Phase 4 (`Listing.Signature`); this phase is about producing correct `Listing`s to feed it.
-Then apply `excludeKeywords`/`mustIncludeKeywords`/price/free filters (CLAUDE.md §6) to the parsed listings.
-Capture the **live** Marketplace DOM structure here (using the `--test-cdp` scaffold from Phase 6 as a starting point) since CLAUDE.md §12 flags current selectors as a known unknown.
-▶ Verify (CLAUDE.md §9 Phase 7): parsed listings + signatures match what's visually on screen; `TextReconstructor` + filters have unit tests (test-first, per CLAUDE.md §8).
+### Phase 7 (in progress) — Parse cards from real captured DOM `[core]` (test-first)
+- Used the `--test-cdp` scaffold (extended with a `--dump-cards [--url=...]` flag in `Program.cs`) to capture real listing-card HTML from both `facebook.com/marketplace/category/free` and a "sofa" search — reconnaissance before writing any parsing code, since CLAUDE.md §12 flags current selectors as a known unknown.
+- **Finding that changed the plan:** no CSS-shuffled decoy text on feed cards across 4 real captured cards (free + priced). CLAUDE.md's "decoy text" defense turned out to be from the user's House Hunt experience with **FB Groups**, not Marketplace — confirmed with the user rather than building `TextReconstructor` against a hypothetical. Decided to work from concrete evidence instead of the original phase description.
+- **Discovery:** every card's `aria-label` attribute contains clean, non-shuffled, comma-separated `"{title}, NZ${price}, {location}, listing {id}"` — accessibility text can't be visually scrambled without breaking screen readers, so it's a far more robust extraction point than reconstructing visible spans.
+- `Scraping/CardParser.cs`: `[GeneratedRegex]` (source-generated regex, compiled at build time — newer idiom than `Regex.Compiled`) parses `aria-label` into a `ScrapedCard(Title, Price, Location, ListingId)` record. Title is matched non-greedily up to the first `", NZ$"` so it doesn't break on locations like "Auckland, New Zealand" that themselves contain a comma. Test-first against the real captured fixtures (5 cases, including a real malformed seller title and a thousands-separator price).
+- **Still open for Phase 7:** apply `excludeKeywords`/`mustIncludeKeywords`/price/free filters (CLAUDE.md §6) to a `ScrapedCard` against a watch — not yet built. Virtualized-feed scrolling (harvest cards as they render) also not yet built.
 
-Teaching reminders for Phase 7: it's `[core]` and the crux of the whole scraping half of the project — go slow, this is genuinely new (no direct Spring/House-Hunt shortcut for the DOM-shuffling defense specifically, even though the *concept* of "the site tries to fight scrapers" carries over).
+### Design change — dynamic, DB-backed watches (subscription model)
+Mid-Phase-7, the user asked to change how watches are managed: instead of a static `Watches` list in `appsettings.json` (bound once at startup, requires a restart to change), watches are now created/stopped at runtime via the API — closer to a subscription model. Discussed and confirmed with the user first (see plan file, since implemented): **kept scraping strictly sequential** (one shared loop, one page at a time) even though watches are now dynamic — spawning one worker per watch would violate CLAUDE.md §5's "gentle, one page at a time" rule, since it'd mean concurrent Playwright pages against one Chrome session. Config watches retired entirely (DB-only going forward), not seeded from appsettings.
+- `Data/WatchEntity.cs`: EF Core entity (`Id`, `Name`, `FreeOnly`, `MinPrice`/`MaxPrice`, `RadiusKm`, `MustIncludeKeywords`/`ExcludeKeywords`, `Condition`, `Category`, `IsActive` — soft-disable via `DELETE /api/watches/{id}` rather than a hard delete, so `Seen` history tied to a watch isn't orphaned, `CreatedAt`).
+- `WatcherDbContext`: new `DbSet<WatchEntity> Watches`. `string[]` fields need a **value converter** (`HasConversion`, JSON serialize/deserialize — SQLite has no native array column) plus a **value comparer** (`ValueComparer<string[]>`) so EF's change tracker can detect content changes on the array instead of just comparing object references. Gotcha hit: `HasConversion`/`ValueComparer` lambdas are compiled as **expression trees**, and C#'s `[]` collection-expression syntax isn't legal inside one — had to use `Array.Empty<string>()` instead.
+- New migration `AddWatches` (`dotnet ef migrations add AddWatches`).
+- `Config/WatcherOptions.cs`: removed `List<Watch> Watches` and the `Watch` class entirely (superseded by `WatchEntity`); `appsettings.json`'s `Watches` array removed. `PollIntervalSeconds`/`DefaultRadiusKm`/`Location` stay in `WatcherOptions` since those are app-wide, not per-watch.
+- `Worker/PollSignal.cs`: a singleton wrapping a bounded `Channel<bool>` (capacity 1, `DropWrite` on full — only the *fact* that something changed matters, not how many times). `Trigger()` (called after `POST /api/watches` saves) and `WaitAsync(delay, token)` (races `Task.Delay` against the channel via `Task.WhenAny` — whichever completes first wins) let the API wake the poll loop immediately instead of waiting out the full jittered interval. This is the same mechanism CLAUDE.md Phase 13 had already planned for `POST /api/poll` — built once here, reusable there.
+- `PollingWorker`: each iteration now queries `db.Watches.Where(w => w.IsActive)` from the scoped `DbContext` instead of reading a static `IOptions<WatcherOptions>` list — a direct extension of the Phase 5 scope-per-iteration pattern, not a new mechanic. Delay changed from `Task.Delay` to `pollSignal.WaitAsync(...)`.
+- `Api/Endpoints.cs`: `GET /api/watches`, `POST /api/watches` (creates + triggers the signal), `DELETE /api/watches/{id}` (soft-disable). These use ASP.NET Core's automatic per-request scoped `DbContext` injection into the minimal-API delegate directly — no manual `IServiceScopeFactory` needed here, that gotcha was specific to the *singleton* `PollingWorker`.
+- ▶ Verified end-to-end: ran the app, `POST /api/watches` with a sofa watch → log immediately showed `1 active watch(es): sofa` (no restart, no waiting for the jittered interval) → `GET /api/watches` round-tripped it correctly including the `ExcludeKeywords` array.
+- New tests: `WatchEntityTests` (string-array JSON round-trip via a second `DbContext` sharing the same open connection, to force a real DB read rather than reading back the change tracker's in-memory copy; `IsActive` filtering), `PollSignalTests` (wakes early when triggered; still respects the delay when never triggered). 17/17 tests green.
 
 ## Roadmap after Phase 7 (one per session)
-8 wire pipeline · 9 Telegram · 10 all watches + radius · 11 polish/docs · 12 CI · 13 React UI · 14 Postgres/Aspire · 15 LLM enrichment.
+Finish Phase 7 (filter-matching against `WatchEntity`, virtualized-feed scrolling) · 8 wire pipeline (now: scrape → `CardParser` → filter → `GetNewAsync`, watches sourced from DB) · 9 Telegram · 10 radius · 11 polish/docs · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.

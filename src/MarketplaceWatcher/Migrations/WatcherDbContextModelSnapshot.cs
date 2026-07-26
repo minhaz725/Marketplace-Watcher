@@ -33,6 +33,52 @@ namespace MarketplaceWatcher.Migrations
 
                     b.ToTable("Seen");
                 });
+
+            modelBuilder.Entity("MarketplaceWatcher.Data.WatchEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Category")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Condition")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExcludeKeywords")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("FreeOnly")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("MaxPrice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("MinPrice")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MustIncludeKeywords")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("RadiusKm")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Watches");
+                });
 #pragma warning restore 612, 618
         }
     }
