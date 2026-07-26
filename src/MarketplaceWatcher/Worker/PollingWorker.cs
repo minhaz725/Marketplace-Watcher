@@ -1,6 +1,7 @@
 using MarketplaceWatcher.Config;
 using MarketplaceWatcher.Data;
 using MarketplaceWatcher.Domain;
+using MarketplaceWatcher.Notifications;
 using MarketplaceWatcher.Scraping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,16 +12,12 @@ namespace MarketplaceWatcher.Worker;
 public class PollingWorker(
     ILogger<PollingWorker> logger,
     IOptions<WatcherOptions> options,
-    IConfiguration config,
     IServiceScopeFactory scopeFactory,
     IMarketplaceScraper scraper,
     PollSignal pollSignal) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var botTokenLoaded = !string.IsNullOrEmpty(config["Telegram:BotToken"]);
-        logger.LogInformation("Telegram bot token loaded from config: {Loaded}", botTokenLoaded);
-
         var baseInterval = options.Value.PollIntervalSeconds;
 
         while (!stoppingToken.IsCancellationRequested)
@@ -28,6 +25,11 @@ public class PollingWorker(
             using (var scope = scopeFactory.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<WatcherDbContext>();
+
+                // Resolved per iteration, not injected into this singleton's constructor:
+                // typed HttpClients are transient, and holding one for the app's lifetime
+                // would defeat IHttpClientFactory's handler rotation.
+                var notifier = scope.ServiceProvider.GetRequiredService<INotifier>();
 
                 var watches = await db.Watches.Where(w => w.IsActive).ToListAsync(stoppingToken);
                 logger.LogInformation(
@@ -52,14 +54,17 @@ public class PollingWorker(
                         .ToList();
 
                     var newForWatch = await db.GetNewAsync(matched, stoppingToken);
+                    var watchName = watch.Name ?? "(free-only / match-all)";
                     foreach (var listing in newForWatch)
                     {
                         logger.LogInformation(
                             "MATCHED [{Watch}]: {Title} (${Price}) - {Url}",
-                            watch.Name ?? "(free-only / match-all)",
+                            watchName,
                             listing.Title,
                             listing.Price,
                             listing.Url);
+
+                        await notifier.NotifyAsync(listing, watchName, stoppingToken);
                     }
 
                     allNew.AddRange(newForWatch);
