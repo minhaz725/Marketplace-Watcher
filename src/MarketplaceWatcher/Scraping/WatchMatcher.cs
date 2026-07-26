@@ -4,6 +4,13 @@ namespace MarketplaceWatcher.Scraping;
 
 public static class WatchMatcher
 {
+    // NOTE: watch.RadiusKm is deliberately NOT applied here, and that is not an omission.
+    // Phase 10 reconnaissance established two things against live data:
+    //   1. Marketplace ignores latitude/longitude/radius URL params — verified against a
+    //      run-to-run noise floor, so radius is enforced by the *account's* saved location.
+    //   2. 96% of harvested cards report Location as "Auckland, New Zealand" (154 of 161),
+    //      so there is no per-listing position to measure a distance from.
+    // Radius is therefore environmental. See PROGRESS.md Phase 10.
     public static bool Matches(ScrapedCard card, WatchEntity watch)
     {
         if (watch.FreeOnly)

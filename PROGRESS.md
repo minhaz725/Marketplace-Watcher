@@ -106,6 +106,7 @@ marketplace-watcher/
 │  ├─ Scraping/CardParser.cs           # parses aria-label → ScrapedCard(Title, Price, Location, ListingId)
 │  ├─ Scraping/WatchMatcher.cs         # ScrapedCard vs WatchEntity: freeOnly/minPrice/maxPrice/keyword filters
 │  ├─ Scraping/IMarketplaceScraper.cs, MarketplaceScraper.cs  # per-watch URL + scroll-harvest, singleton CDP connection
+│  ├─ Scraping/HarvestPolicy.cs        # pure stop-condition for the scroll-harvest (+ truncation detection)
 │  ├─ Worker/PollingWorker.cs          # BackgroundService jittered poll loop; reads active watches from DB
 │  └─ Worker/PollSignal.cs             # Channel-based signal so API calls can wake the poll loop early
 └─ tests/MarketplaceWatcher.Tests/
@@ -114,6 +115,7 @@ marketplace-watcher/
    ├─ Data/WatchEntityTests.cs         # string[] JSON round-trip, IsActive filtering
    ├─ Scraping/CardParserTests.cs      # aria-label parsing against real captured fixtures
    ├─ Scraping/WatchMatcherTests.cs    # filter matching (freeOnly/price/keywords), 9 cases
+   ├─ Scraping/HarvestPolicyTests.cs   # scroll stop-condition + truncation detection, 9 cases
    └─ Worker/PollSignalTests.cs        # early-wake vs. full-delay behaviour
 ```
 (User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken` + `Telegram:ChatId`. `watcher.db` is a runtime artifact, gitignored.)
@@ -174,11 +176,32 @@ No `INotifier`/Telegram integration exists yet, so a genuine match was previousl
 - ⚠️ **Known tradeoff — at-most-once delivery (deferred deliberately).** `GetNewAsync` marks listings seen *and* commits in the same call, so a listing is already in `Seen` before `NotifyAsync` runs. If Telegram is down and retries exhaust, that alert is **lost permanently**. Fixing it properly means splitting `GetNewAsync` into "which are new?" + "mark these sent" — a real change to the Phase 4 data layer, so it was left out rather than smuggled into Phase 9. User chose "note it and move on". **Record as an ADR in Phase 11**; revisit if it bites in practice.
 - ▶ Verify: pending — build clean, 26/26 tests green, but the end-to-end "real listing pings my phone" check still needs the secondary-account Chrome on port 9222 and a live poll.
 
-## ▶ NEXT: Phase 10 — all watches incl. "free near me" `[anchor]`
-Radius / client-side distance filter around Auckland (default 5 km). Note the blocker recorded in Phase 7: `ScrapedCard.Location` is a **display string** ("Auckland, New Zealand"), not coordinates — real distance filtering needs geocoding first, which is why `radiusKm` is parsed and stored on `WatchEntity` but not yet applied by `WatchMatcher`.
+### Phase 10 — retargeted from "radius" to harvest reliability `[core]` (test-first)
+Started as the radius/distance-filter phase. Reconnaissance killed that plan and surfaced a real bug instead, so the phase was **retargeted with the user's agreement** rather than shipping a filter that provably does nothing.
 
-## Roadmap after Phase 10 (one per session)
-11 polish/docs (incl. the two ADRs flagged in Phase 9: Telegram-vs-WhatsApp, and at-most-once delivery) · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
+**Reconnaissance (temporary `Scraping/LocationRecon.cs` + `--recon` flag, both deleted afterward — same throwaway-scaffold pattern as Phases 6/7).**
+- **Q1 — is `Location` ever finer than city?** Across 161 harvested cards: **154 `"Auckland, New Zealand"`, 7 `"Takanini, New Zealand"`**. So it *can* be suburb-level (correcting the earlier "always city" assumption from the 4 Phase 7 fixtures), but at ~96% city-level, geocoding + haversine could discriminate roughly 1 listing in 25. Not worth the machinery.
+- **Q2 — do `latitude`/`longitude`/`radius` URL params work?** **No.** Facebook ignores them; radius comes from the *account's* saved Marketplace location.
+- ⚠️ **Methodology lesson worth keeping.** The first version of the recon compared narrow-radius vs wide-radius result sets and concluded "they differ → the param works." **That was a false positive.** Adding a control — fetching the *same* URL twice to establish a noise floor — showed same-URL similarity of **75%** and narrow-vs-wide similarity of **75%**: identical, i.e. zero effect. Any time you test a system you don't control and whose output is nondeterministic, **measure it against itself first**, then check whether your signal exceeds that noise. Difference alone proves nothing.
+- User confirmed Facebook's location picker only offers **cities**, not suburbs — so re-centring the circle on Wesley/Mt Roskill isn't available either. Radius is environmental, full stop.
+
+**Decision (option C): `RadiusKm` is deliberately NOT applied.** Documented in a comment on `WatchMatcher.Matches` explaining *why*, so a future reader doesn't "fix" the apparent omission. `RadiusKm` stays on `WatchEntity` (harmless, and the UI may surface it later). **ADR for Phase 11.**
+
+**The real bug the recon exposed.** The same URL yielded **23 listings on one fetch and 46 on the next** — meaning `MarketplaceScraper` had been silently harvesting as little as half the feed since Phase 8. A listing never harvested is an alert never sent. Two causes, two fixes:
+- **`GotoAsync` returning ≠ cards rendered.** Marketplace builds its grid client-side, so the first harvest often ran against an empty/partial DOM. Now waits on `page.WaitForSelectorAsync(CardSelector, Timeout = 20s)` first, and returns empty with a `LogWarning` if nothing ever appears.
+- **A fixed 5 scroll rounds could stop mid-feed.** Replaced with `Scraping/HarvestPolicy.cs` — pure, testable logic (`maxRounds: 12`, `stagnantRoundsBeforeStop: 2`) that keeps scrolling until **two consecutive rounds** yield no unseen `ListingId`. Two, not one, specifically because a single slow lazy-load round must not be mistaken for "feed exhausted" — that misreading *was* the bug.
+- **No silent caps.** `HarvestPolicy.StoppedEarly(...)` distinguishes "stopped because the feed ran dry" from "stopped because the round cap ran out", and the latter logs a `LogWarning` naming the missed listings. A truncated harvest otherwise looks identical to a complete one in the logs.
+- Written test-first (`HarvestPolicyTests.cs`, 9 cases incl. the argument-validation `[Theory]`). **35/35 tests green.**
+
+▶ **Verify passed — the point of the phase.** Two consecutive live runs produced **byte-identical** harvests: `macbook pro` 141 listings / 12 rounds and `Samsung S26 Ultra` 49 / 6 rounds, both times — against a pre-fix baseline that swung 23↔46 on the same URL. Zero truncation warnings fired, so 141 was genuine feed exhaustion that happened to use all 12 rounds (an earlier reading of the round count as "truncated" was wrong; the detector disproved it). Second run logged `polled, 0 new` — dedup holding, no duplicate Telegram traffic. Phase 9's notifier also confirmed working end-to-end here: 20 real alerts delivered on run 1 with **0** send failures.
+
+**Follow-up worth considering (not done):** Marketplace supports a `sortBy=creation_time_descending` URL param. If it works — and unlike `radius` it's a real UI feature, so test it the same controlled way — newest listings would sort to the top, and the deep 12-round scroll every ~90s could shrink to 2–3 rounds. That's both gentler (CLAUDE.md §5) and faster.
+
+## ▶ NEXT: Phase 11 — polish + docs `[anchor]`
+Structured logging, error backoff, `/status`, graceful shutdown, README, on-call runbook, and **DECISIONS.md** — which now has three real ADRs queued up from Phases 9–10: (a) Telegram over WhatsApp, (b) at-most-once delivery, (c) radius is environmental.
+
+## Roadmap after Phase 11 (one per session)
+12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
 
 ## Handover note for a fresh session
 This session ran Phases 6–8 plus the dynamic-watches design change, all committed. The app has been run manually several times against the real secondary-account Chrome (port 9222) — **no background process should currently be running** (confirmed killed at the end of this session), but a new session should double-check with `ps aux | grep MarketplaceWatcher` before assuming a clean start, since a prior mid-session cleanup attempt in this same session used a `pkill` pattern (`MarketplaceWatcher.dll`) that silently failed to match the actual apphost process name (`MarketplaceWatcher`, no `.dll`) and left it running unnoticed for a while. `watcher.db` (gitignored, local) currently has a real "sofa" watch (`Id=1`, active) plus whatever `Seen` rows accumulated from live scraping during this session's verification — safe to leave, delete, or reset (`rm src/MarketplaceWatcher/watcher.db*` then `dotnet run` re-migrates from scratch) as preferred.
