@@ -95,7 +95,9 @@ marketplace-watcher/
 │  ├─ appsettings.json                 # base config — Watcher section + ConnectionStrings:Watcher
 │  ├─ appsettings.Development.json      # dev override (Logging only; Banner demo retired)
 │  ├─ Properties/launchSettings.json    # dev-only launch profile (sets DOTNET_ENVIRONMENT=Development)
-│  ├─ Config/WatcherOptions.cs          # WatcherOptions / Watch / GeoPoint — Options pattern POCOs
+│  ├─ Config/WatcherOptions.cs          # WatcherOptions / GeoPoint — Options pattern POCOs
+│  ├─ Config/TelegramOptions.cs         # BotToken + ChatId, [Required], ValidateOnStart
+│  ├─ Notifications/INotifier.cs, TelegramNotifier.cs  # typed HttpClient + Polly resilience
 │  ├─ Domain/Listing.cs                # record with content Signature (SHA-256, excludes Url)
 │  ├─ Data/Seen.cs, WatcherDbContext.cs, WatchEntity.cs  # Seen (dedup) + Watches tables
 │  ├─ Migrations/                      # EF Core code-first migrations (InitialCreate, AddWatches)
@@ -114,7 +116,7 @@ marketplace-watcher/
    ├─ Scraping/WatchMatcherTests.cs    # filter matching (freeOnly/price/keywords), 9 cases
    └─ Worker/PollSignalTests.cs        # early-wake vs. full-delay behaviour
 ```
-(User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken`. `watcher.db` is a runtime artifact, gitignored.)
+(User-secrets store lives outside the repo, keyed by `<UserSecretsId>` in the `.csproj`; holds `Telegram:BotToken` + `Telegram:ChatId`. `watcher.db` is a runtime artifact, gitignored.)
 
 ## How to run / verify quickly
 ```bash
@@ -157,12 +159,26 @@ Mid-Phase-7, the user asked to change how watches are managed: instead of a stat
 ### Interim — MATCHED log line (ahead of Phase 9)
 No `INotifier`/Telegram integration exists yet, so a genuine match was previously invisible beyond the aggregate `polled, {N} new` count. Added a per-listing log line in `PollingWorker` — `logger.LogInformation("MATCHED [{Watch}]: {Title} (${Price}) - {Url}", ...)` — logged once per genuinely-new listing (post-`GetNewAsync`, so only real matches, not reposts/already-seen). This is a stopgap for visibility, not a replacement for Phase 9 — it'll likely stay alongside the eventual Telegram send, not get removed by it.
 
-## ▶ NEXT: Phase 9 — Telegram notifier `[anchor]`
-`INotifier` interface + `TelegramNotifier` using a typed `HttpClient` (`IHttpClientFactory`, + Polly for resilience — CLAUDE.md §4). Token already sits in user-secrets (`Telegram:BotToken`, set back in Phase 2, currently `"dummy-for-now"` — needs a real bot token before this phase's ▶ Verify). Message per genuinely-new listing: title/price/location/url. Hook it in next to (or instead of) the `MATCHED` log line in `PollingWorker`.
-▶ Verify (CLAUDE.md §9 Phase 9): a real new listing pings your phone via Telegram.
+### Phase 9 — Telegram notifier `[anchor]`
+- **Decided against WhatsApp first.** Asked before starting whether WhatsApp could replace Telegram. It can't usefully: the only sanctioned route is the WhatsApp Business Cloud API (Meta business account + a *dedicated* phone number + business verification), and an alert bot is **business-initiated** messaging — the paid category, charged per message from the first one, and restricted to pre-approved templates rather than free-form text. The only free path (the 24h "customer service window" opened by the user messaging first) requires manually poking your own bot daily *and* Meta begins charging for in-window non-template replies from **1 Oct 2026**. Unofficial libs (Baileys / whatsapp-web.js) violate ToS and risk a number ban. Telegram: free, unlimited, 60 seconds via @BotFather. **Write this up as an ADR in Phase 11** — it's a genuine "clear technical options" signal (CLAUDE.md §11).
+- Secrets: `Telegram:BotToken` (the Phase 2 `"dummy-for-now"` placeholder replaced with a real token) + new `Telegram:ChatId`. **Gotcha:** `dotnet user-secrets` resolves the project from the *current directory* — running it from the repo root fails with "Could not find a MSBuild project file" because the root only has `MarketplaceWatcher.slnx`, and a solution carries no `<UserSecretsId>`. Use `--project src/MarketplaceWatcher` or `cd` in first.
+- `Config/TelegramOptions.cs`: `BotToken` + `ChatId`, both `[Required]`. `ChatId` is a **`string`, not a `long`** — channel ids are big negatives (`-100…`) but the API also accepts `"@channelname"`.
+- Registered with `AddOptions<T>().Bind(...).ValidateDataAnnotations().ValidateOnStart()` — a deliberate **upgrade over Phase 2's plain `Configure<T>()`**, which binds lazily and would only surface a missing token at first use. `ValidateOnStart` turns it into a loud crash at boot.
+- `Notifications/INotifier.cs` + `TelegramNotifier.cs`: typed `HttpClient` via `AddHttpClient<INotifier, TelegramNotifier>`, `BaseAddress = https://api.telegram.org/bot{token}/`. **Trailing slash is load-bearing** — `Uri` combination follows browser rules, so without it the relative `"sendMessage"` *replaces* the last path segment instead of appending.
+- Resilience: `Microsoft.Extensions.Http.Resilience` + `.AddStandardResilienceHandler()` (retry w/ exponential backoff + jitter, circuit breaker, timeouts). This is Microsoft's first-party wrapper over **Polly v8** and supersedes the older `Microsoft.Extensions.Http.Polly` package most blog posts still show.
+- Message uses `parse_mode: HTML` with every interpolated value `WebUtility.HtmlEncode`d — a listing title containing a bare `<` or `&` would otherwise make Telegram reject the whole message. New C# mechanics used: `[property: JsonPropertyName("chat_id")]` (the `property:` target is *required* on a positional record parameter, else the attribute is ambiguous) and `"""` raw string literals (closing-quote indentation is stripped from every line).
+- Errors are swallowed and logged, never thrown — a throwing notifier would kill `ExecuteAsync` and stop the `BackgroundService` permanently. An **exception filter** (`catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }`) separates genuine Ctrl-C shutdown from a real send failure. Non-2xx responses log the **body**, since Telegram puts the actual reason ("chat not found", "bot was blocked") there rather than in the status code.
+- **`INotifier` is resolved from the per-iteration scope, not injected into `PollingWorker`'s constructor.** Sharper cousin of the Phase 5 gotcha: typed HTTP clients are **transient**, and transient-into-singleton — unlike scoped-into-singleton — does **not** throw. It silently creates a captive dependency where the singleton pins one `HttpClient` for the app's lifetime, defeating exactly the handler rotation `IHttpClientFactory` exists to provide.
+- Removed `PollingWorker`'s now-dead `IConfiguration config` parameter and its Phase 2 `"Telegram bot token loaded: True"` line (superseded by validated Options). The `MATCHED` log line stays alongside the Telegram send, as the interim note predicted.
+- Debugging ladder worth reusing: prove credentials with a raw `curl -s "https://api.telegram.org/bot<TOKEN>/sendMessage" -d chat_id=<ID> -d text=hi` → `{"ok":true}` *before* running the app. If it says `chat not found`, the bot needs adding to the channel as an **administrator** with "Post Messages".
+- ⚠️ **Known tradeoff — at-most-once delivery (deferred deliberately).** `GetNewAsync` marks listings seen *and* commits in the same call, so a listing is already in `Seen` before `NotifyAsync` runs. If Telegram is down and retries exhaust, that alert is **lost permanently**. Fixing it properly means splitting `GetNewAsync` into "which are new?" + "mark these sent" — a real change to the Phase 4 data layer, so it was left out rather than smuggled into Phase 9. User chose "note it and move on". **Record as an ADR in Phase 11**; revisit if it bites in practice.
+- ▶ Verify: pending — build clean, 26/26 tests green, but the end-to-end "real listing pings my phone" check still needs the secondary-account Chrome on port 9222 and a live poll.
 
-## Roadmap after Phase 9 (one per session)
-10 radius (client-side distance filter — `ScrapedCard.Location` is currently a display string, not coordinates, so this needs geocoding) · 11 polish/docs · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
+## ▶ NEXT: Phase 10 — all watches incl. "free near me" `[anchor]`
+Radius / client-side distance filter around Auckland (default 5 km). Note the blocker recorded in Phase 7: `ScrapedCard.Location` is a **display string** ("Auckland, New Zealand"), not coordinates — real distance filtering needs geocoding first, which is why `radiusKm` is parsed and stored on `WatchEntity` but not yet applied by `WatchMatcher`.
+
+## Roadmap after Phase 10 (one per session)
+11 polish/docs (incl. the two ADRs flagged in Phase 9: Telegram-vs-WhatsApp, and at-most-once delivery) · 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.
 
 ## Handover note for a fresh session
 This session ran Phases 6–8 plus the dynamic-watches design change, all committed. The app has been run manually several times against the real secondary-account Chrome (port 9222) — **no background process should currently be running** (confirmed killed at the end of this session), but a new session should double-check with `ps aux | grep MarketplaceWatcher` before assuming a clean start, since a prior mid-session cleanup attempt in this same session used a `pkill` pattern (`MarketplaceWatcher.dll`) that silently failed to match the actual apphost process name (`MarketplaceWatcher`, no `.dll`) and left it running unnoticed for a while. `watcher.db` (gitignored, local) currently has a real "sofa" watch (`Id=1`, active) plus whatever `Seen` rows accumulated from live scraping during this session's verification — safe to leave, delete, or reset (`rm src/MarketplaceWatcher/watcher.db*` then `dotnet run` re-migrates from scratch) as preferred.
