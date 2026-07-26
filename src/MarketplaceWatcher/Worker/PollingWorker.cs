@@ -19,6 +19,13 @@ public class PollingWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var baseInterval = options.Value.PollIntervalSeconds;
+        var allowedLocations = options.Value.AllowedLocations;
+
+        logger.LogInformation(
+            allowedLocations.Length > 0
+                ? "Location filter active — only listings matching: {Locations}"
+                : "Location filter disabled — listings from anywhere will be alerted",
+            string.Join(", ", allowedLocations));
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -44,7 +51,30 @@ public class PollingWorker(
                 foreach (var watch in watches)
                 {
                     var cards = await scraper.ScrapeAsync(watch, stoppingToken);
-                    var matched = cards
+
+                    // Facebook pads sparse searches with out-of-region listings, so the
+                    // card's own location is filtered before anything else looks at it.
+                    var local = cards
+                        .Where(card => LocationFilter.IsAllowed(card.Location, allowedLocations))
+                        .ToList();
+
+                    if (local.Count != cards.Count)
+                    {
+                        var rejected = cards
+                            .Where(card => !LocationFilter.IsAllowed(card.Location, allowedLocations))
+                            .Select(card => card.Location)
+                            .Distinct();
+
+                        // Logged, not silent: this is how you spot an Auckland suburb that
+                        // needs adding to AllowedLocations rather than losing it unnoticed.
+                        logger.LogInformation(
+                            "Dropped {Count} out-of-region listing(s) for watch {Name}: {Locations}",
+                            cards.Count - local.Count,
+                            watch.Name ?? "(free-only / match-all)",
+                            string.Join(", ", rejected));
+                    }
+
+                    var matched = local
                         .Where(card => WatchMatcher.Matches(card, watch))
                         .Select(card => new Listing(
                             card.Title,
