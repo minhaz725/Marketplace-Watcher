@@ -51,7 +51,18 @@ public class PollingWorker(
                             $"https://www.facebook.com/marketplace/item/{card.ListingId}/"))
                         .ToList();
 
-                    allNew.AddRange(await db.GetNewAsync(matched, stoppingToken));
+                    var newForWatch = await db.GetNewAsync(matched, stoppingToken);
+                    foreach (var listing in newForWatch)
+                    {
+                        logger.LogInformation(
+                            "MATCHED [{Watch}]: {Title} (${Price}) - {Url}",
+                            watch.Name ?? "(free-only / match-all)",
+                            listing.Title,
+                            listing.Price,
+                            listing.Url);
+                    }
+
+                    allNew.AddRange(newForWatch);
                 }
 
                 logger.LogInformation("polled, {Count} new", allNew.Count);
