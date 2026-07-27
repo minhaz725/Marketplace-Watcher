@@ -16,13 +16,17 @@ export default function App() {
   const [polling, setPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // null = show every watch's listings. Holds the watch NAME because that is what
+  // /api/listings filters on (Seen stores WatchName, denormalized at match time).
+  const [selectedWatch, setSelectedWatch] = useState<string | null>(null);
+
   // useCallback keeps this the same function object between renders, so the useEffect below
   // doesn't see it as "changed" every time and restart its timer.
   const refresh = useCallback(async () => {
     try {
       // All three requests start together rather than waiting in turn.
       const [nextListings, nextWatches, nextStatus] = await Promise.all([
-        api.listings(),
+        api.listings(selectedWatch),
         api.watches(),
         api.status(),
       ]);
@@ -33,7 +37,9 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     }
-  }, []);
+    // selectedWatch is a dependency: refresh must be rebuilt when it changes, which makes
+    // the useEffect below re-run and re-fetch immediately on click.
+  }, [selectedWatch]);
 
   // useEffect runs code AFTER render, for things outside React's world — here, fetching and
   // a timer. The [refresh] at the end is the dependency list: re-run only if that changes.
@@ -73,10 +79,14 @@ export default function App() {
 
       <main>
         <section className="listings">
-          <h2>Listings</h2>
+          <h2>{selectedWatch === null ? "Listings" : `Listings · ${selectedWatch}`}</h2>
           <ListingsTable listings={listings} />
         </section>
-        <WatchesPanel watches={watches} />
+        <WatchesPanel
+          watches={watches}
+          selected={selectedWatch}
+          onSelect={setSelectedWatch}
+        />
       </main>
     </div>
   );

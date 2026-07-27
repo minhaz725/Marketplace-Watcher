@@ -157,13 +157,37 @@ td a:hover { text-decoration: underline; }
 /* Watches panel */
 .watches ul { list-style: none; margin: 0; padding: 0; }
 
-.watches li {
+.watches li { margin-bottom: 0.5rem; }
+
+/* Override the global button styling — these are cards, not primary actions */
+.watch-card {
+  display: block;
+  width: 100%;
+  text-align: left;
   padding: 0.6rem 0.75rem;
-  margin-bottom: 0.5rem;
   background: var(--panel);
+  color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.8125rem;
+  font-weight: 400;
+  cursor: pointer;
 }
 
-.watch-name { font-weight: 600; margin-bottom: 0.15rem; }
+.watch-card:hover { border-color: var(--accent); }
+
+.watch-card-active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.watch-name { display: block; font-weight: 600; margin-bottom: 0.15rem; }
+
+.clear-filter {
+  width: 100%;
+  margin-top: 0.25rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+}

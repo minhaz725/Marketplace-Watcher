@@ -96,6 +96,15 @@ public class PollingWorker(
                             .ToList();
 
                         var newForWatch = await db.GetNewAsync(matched, stoppingToken);
+
+                        // Where did the listings go? Without this, "42 harvested, 0 alerts"
+                        // gives no clue whether the location filter, the price band or an
+                        // exclude keyword ate them.
+                        logger.LogInformation(
+                            "Watch {Name} funnel: {Harvested} harvested → {Local} in-region → "
+                            + "{Matched} passed filters → {New} not seen before",
+                            watchName, cards.Count, local.Count, matched.Count, newForWatch.Count);
+
                         var delivered = new List<Listing>();
 
                         foreach (var listing in newForWatch)

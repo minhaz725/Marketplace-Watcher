@@ -49,7 +49,11 @@ async function get<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  listings: (limit = 100) => get<Listing[]>(`/api/listings?limit=${limit}`),
+  listings: (watch?: string | null, limit = 100) => {
+    // encodeURIComponent so a watch name with spaces or "&" survives the query string.
+    const watchParam = watch ? `&watch=${encodeURIComponent(watch)}` : "";
+    return get<Listing[]>(`/api/listings?limit=${limit}${watchParam}`);
+  },
   watches: () => get<Watch[]>("/api/watches"),
   status: () => get<Status>("/api/status"),
 
