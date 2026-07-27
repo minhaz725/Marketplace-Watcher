@@ -17,6 +17,86 @@ public class PollingWorker(
     PollSignal pollSignal,
     WatcherStatus status) : BackgroundService
 {
+    // A first poll on a fresh car watch can find dozens of titleless listings. Cap the page
+    // loads per poll so it spreads over a few cycles instead of hammering Facebook once.
+    private const int MaxEnrichmentsPerPoll = 10;
+
+    /// <summary>
+    /// Replaces titleless cards with title-bearing ones where we can. Cards whose title
+    /// cannot be recovered are dropped (ADR-005).
+    /// </summary>
+    private async Task<List<ScrapedCard>> EnrichTitlelessAsync(
+        List<ScrapedCard> cards,
+        Data.WatchEntity watch,
+        WatcherDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var result = cards.Where(c => c.HasTitle).ToList();
+
+        // Only worth a page load if the price already fits — no point fetching a car that is
+        // out of budget regardless of what it turns out to be called.
+        var candidates = cards
+            .Where(c => !c.HasTitle && WatchMatcher.MatchesPrice(c, watch))
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return result;
+        }
+
+        var ids = candidates.Select(c => c.ListingId).ToList();
+        var cached = await db.CheckedListings
+            .Where(c => ids.Contains(c.ListingId))
+            .ToDictionaryAsync(c => c.ListingId, c => c.Title, cancellationToken);
+
+        var fetched = 0;
+        var recovered = 0;
+
+        foreach (var card in candidates)
+        {
+            string? title;
+
+            if (cached.TryGetValue(card.ListingId, out var cachedTitle))
+            {
+                title = cachedTitle;
+            }
+            else if (fetched >= MaxEnrichmentsPerPoll)
+            {
+                continue; // Try again next poll rather than exceeding the budget.
+            }
+            else
+            {
+                title = await scraper.FetchTitleAsync(card.ListingId, cancellationToken);
+                fetched++;
+
+                // Cached either way — a null result must not be re-fetched every poll.
+                db.CheckedListings.Add(new Data.CheckedListing
+                {
+                    ListingId = card.ListingId,
+                    Title = title,
+                    CheckedAt = DateTime.UtcNow,
+                });
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                result.Add(card with { Title = title });
+                recovered++;
+            }
+        }
+
+        if (candidates.Count > 0)
+        {
+            logger.LogInformation(
+                "Watch {Name}: {Candidates} titleless in-budget listing(s), {Fetched} page load(s), "
+                + "{Recovered} title(s) recovered",
+                watch.Name ?? "(free-only / match-all)", candidates.Count, fetched, recovered);
+        }
+
+        return result;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var baseInterval = options.Value.PollIntervalSeconds;
@@ -86,7 +166,12 @@ public class PollingWorker(
                                 string.Join(", ", rejected));
                         }
 
-                        var matched = local
+                        // Titleless cards can't be keyword-filtered, so recover the title from
+                        // the listing's own page — but only for ones whose price already fits,
+                        // and only once each ever (CheckedListings is the cache).
+                        var enriched = await EnrichTitlelessAsync(local, watch, db, stoppingToken);
+
+                        var matched = enriched
                             .Where(card => WatchMatcher.Matches(card, watch))
                             .Select(card => new Listing(
                                 card.Title,

@@ -17,6 +17,22 @@ namespace MarketplaceWatcher.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
+            modelBuilder.Entity("MarketplaceWatcher.Data.CheckedListing", b =>
+                {
+                    b.Property<string>("ListingId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ListingId");
+
+                    b.ToTable("CheckedListings");
+                });
+
             modelBuilder.Entity("MarketplaceWatcher.Data.Seen", b =>
                 {
                     b.Property<string>("Signature")

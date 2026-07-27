@@ -130,6 +130,60 @@ Reconnaissance is throwaway: a temporary file plus a CLI flag, deleted once it h
 
 ---
 
+## ADR-006 — Recover missing titles from the listing page
+
+**Status:** accepted · **Date:** 2026-07-28 · **Supersedes the "rejected alternative" in ADR-005**
+
+### Context
+
+ADR-005 dropped titleless cards, accepting that roughly half of vehicle listings would never be
+alerted on. It rejected fetching each listing's own page as too expensive, quoting "~30 extra
+page loads per poll."
+
+**That estimate was wrong.** It was the *first-poll* figure treated as the steady state. The
+actual per-poll cost is the number of titleless listings that are (a) in the price band, (b) in
+region, and (c) never checked before. After the first few polls that is a handful per day, often
+zero.
+
+### Decision
+
+For a titleless card whose **price already fits**, open its listing page and read the real title
+from `[role='main'] h1`, then run the normal keyword filters against it.
+
+Three things make this affordable:
+
+1. **A price gate first.** No page load for a car that is out of budget regardless of its name.
+2. **A permanent cache** — `CheckedListings`, keyed on `ListingId`, recording the resolved title
+   *or null*. Every listing is fetched **at most once, ever**. Without this, a fetched-then-
+   rejected listing is never written to `Seen`, so it would be re-fetched every poll: about
+   **960 page loads a day for a single rejected car** at a 90-second interval. The cache is the
+   load-bearing part of this design, not an optimisation.
+3. **A per-poll cap** (10). A fresh car watch finds dozens at once; they spread over a few
+   cycles instead of arriving as a burst.
+
+### Filter on the recovered title, not the description
+
+The listing page has both. We use the title only. Descriptions are written in negations —
+"never been in an **accident**", "no **damage**", "**not** a **wreck**" — so substring
+`excludeKeywords` would reject exactly the listings whose owners bothered to say what is *not*
+wrong. Judging prose needs a model, not `Contains`; that is Phase 15 territory.
+
+The recovered title also filters better than a description would: a real capture returned
+`2013 Toyota Aqua hybrid 190kms`, correctly rejected by `mustIncludeKeywords: ["prius"]`, where a
+description mentioning Prius comparatively might have slipped through.
+
+### Consequences
+
+- Vehicle searches are usable again: a Prius watch went from **0 alerts to 9**, with real titles,
+  at a cost of 10 page loads on the first poll.
+- `excludeKeywords` now works on those listings, so ADR-005's "mostly rubbish" problem is solved
+  at the source rather than by dropping everything.
+- Titles that cannot be recovered are still dropped, per ADR-005.
+- `CheckedListings` grows by one row per distinct listing ever considered. Tiny, and it is a
+  cache — safe to delete, at the cost of re-fetching.
+
+---
+
 ## ADR-005 — Titleless cards are dropped (and the reversal that got us here)
 
 **Status:** accepted · **Date:** 2026-07-28 (revised same day — first decision reversed in practice)

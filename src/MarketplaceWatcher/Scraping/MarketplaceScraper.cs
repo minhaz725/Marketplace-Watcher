@@ -92,6 +92,32 @@ public sealed class MarketplaceScraper(
         }
     }
 
+    public async Task<string?> FetchTitleAsync(string listingId, CancellationToken cancellationToken = default)
+    {
+        var cdp = _connection ??= await CdpConnection.ConnectAsync();
+        var page = await cdp.Context.NewPageAsync();
+        try
+        {
+            await page.GotoAsync($"https://www.facebook.com/marketplace/item/{listingId}/");
+
+            // Verified against real listings: the bare "h1" is Facebook's chrome
+            // ("Notifications"); the listing title is the h1 inside the main region.
+            var title = await page.InnerTextAsync("[role='main'] h1", new() { Timeout = 15_000 });
+            return string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        }
+        catch (Exception ex)
+        {
+            // A failed enrichment must not abort the poll. It is cached as "no title" by the
+            // caller, so a permanently broken listing is not retried forever.
+            logger.LogWarning("Could not read title for listing {ListingId}: {Message}", listingId, ex.Message);
+            return null;
+        }
+        finally
+        {
+            await page.CloseAsync();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_connection is not null)

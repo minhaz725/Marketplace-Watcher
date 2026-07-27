@@ -6,6 +6,30 @@ namespace MarketplaceWatcher.Tests.Scraping;
 
 public class WatchMatcherTests
 {
+    [Theory]
+    [InlineData(6999, true)]
+    [InlineData(1000, true)]   // inclusive lower bound
+    [InlineData(7000, true)]   // inclusive upper bound
+    [InlineData(999, false)]
+    [InlineData(7001, false)]
+    public void MatchesPrice_gates_on_the_band_alone(decimal price, bool expected)
+    {
+        // The cheap gate before spending a page load recovering a missing title.
+        var card = new ScrapedCard("", price, "Auckland, New Zealand", "1");
+        var watch = new WatchEntity { MinPrice = 1000m, MaxPrice = 7000m, ExcludeKeywords = ["wrecking"] };
+
+        Assert.Equal(expected, WatchMatcher.MatchesPrice(card, watch));
+    }
+
+    [Fact]
+    public void MatchesPrice_honours_freeOnly()
+    {
+        var watch = new WatchEntity { FreeOnly = true };
+
+        Assert.True(WatchMatcher.MatchesPrice(new ScrapedCard("", 0m, "Auckland", "1"), watch));
+        Assert.False(WatchMatcher.MatchesPrice(new ScrapedCard("", 10m, "Auckland", "2"), watch));
+    }
+
     [Fact]
     public void A_titleless_card_is_rejected_even_when_the_price_fits()
     {

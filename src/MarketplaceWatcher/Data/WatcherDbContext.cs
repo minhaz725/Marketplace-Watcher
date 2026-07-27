@@ -9,10 +9,12 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
 {
     public DbSet<Seen> Seen => Set<Seen>();
     public DbSet<WatchEntity> Watches => Set<WatchEntity>();
+    public DbSet<CheckedListing> CheckedListings => Set<CheckedListing>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Seen>().HasKey(s => s.Signature);
+        modelBuilder.Entity<CheckedListing>().HasKey(c => c.ListingId);
 
         var stringArrayComparer = new ValueComparer<string[]>(
             (a, b) => (a ?? Array.Empty<string>()).SequenceEqual(b ?? Array.Empty<string>()),
