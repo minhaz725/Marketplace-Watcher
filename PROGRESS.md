@@ -299,6 +299,14 @@ A `Toyota Prius` watch alerted on nothing. Diagnosis, in order, each step ruling
 - **Listings sort cheapest-first**, always. Done client-side in `ListingsTable` on a **copy** of the array — `.sort()` mutates in place, and mutating a prop (React state owned upstream) causes renders that silently disagree with each other. Listings with no price sort last rather than as zero.
 - Watch cards in the sidebar are now buttons: clicking one filters the table to that watch, clicking again clears (plus a "Show all listings" button). Uses a real `<button>` for focus/keyboard behaviour, filters **server-side** via `/api/listings?watch=`, and `selectedWatch` is a dependency of the `refresh` callback so the fetch re-runs on click.
 
+### Scheduling — hourly, aligned to the clock
+- `PollIntervalSeconds` 90 → **3600**, and the delay is now **snapped to the clock** rather than counted forward from whenever the last poll finished. Polls land at 4:00, 5:00, 6:00 — not 4:00, 5:03, 6:07 drifting by however long each scrape took.
+- `Worker/PollSchedule.cs`: pure `NextDelay(now, interval, slots)` — boundaries measured from midnight, so an hourly interval lands on the hour and a 15-minute one on :00/:15/:30/:45. Takes `now` as a parameter rather than reading the clock, which is what makes it testable. Test-first, 9 cases including landing exactly on a boundary (waits a full interval instead of firing twice), crossing midnight, and not drifting after a slow poll.
+- **Jitter removed.** CLAUDE.md §5's jittered 60–120s existed to look less robotic at high frequency; once an hour is gentle enough that exact alignment costs nothing and is what the user asked for. Easy to reintroduce as a small random offset if it ever matters.
+- **Backoff reworked for an aligned schedule:** consecutive failures now *skip whole slots* rather than adding an offset, so a retry still lands on the hour. Capped at **4 hours** — the previous 8× multiplier would have meant an 8-hour blackout at hourly cadence, too long to notice a problem. The cap is on the delay rather than the slot count so the rule holds at any interval.
+- Logs `Next poll at 04:00` after every cycle, so the schedule is visible rather than inferred.
+- ▶ Verified live: started 03:30 → `Polling every 01:00:00, aligned to the clock. First poll now, then 04:00.` → `polled, 0 new` → `Next poll at 04:00`. **83/83 tests green.**
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

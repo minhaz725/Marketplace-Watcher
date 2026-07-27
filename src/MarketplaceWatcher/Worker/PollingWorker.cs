@@ -21,6 +21,9 @@ public class PollingWorker(
     // loads per poll so it spreads over a few cycles instead of hammering Facebook once.
     private const int MaxEnrichmentsPerPoll = 10;
 
+    /// <summary>Ceiling on failure backoff, so a broken dependency is still retried today.</summary>
+    private static readonly TimeSpan MaxBackoffDelay = TimeSpan.FromHours(4);
+
     /// <summary>
     /// Replaces titleless cards with title-bearing ones where we can. Cards whose title
     /// cannot be recovered are dropped (ADR-005).
@@ -99,8 +102,12 @@ public class PollingWorker(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var baseInterval = options.Value.PollIntervalSeconds;
+        var interval = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
         var allowedLocations = options.Value.AllowedLocations;
+
+        logger.LogInformation(
+            "Polling every {Interval}, aligned to the clock. First poll now, then {NextPoll:HH:mm}.",
+            interval, PollSchedule.NextPollAt(DateTime.Now, interval));
 
         logger.LogInformation(
             allowedLocations.Length > 0
@@ -257,16 +264,32 @@ public class PollingWorker(
             consecutiveFailures = pollFailed ? consecutiveFailures + 1 : 0;
             status.RecordFailures(consecutiveFailures, lastError);
 
-            var jitteredSeconds = Random.Shared.Next(baseInterval - 30, baseInterval + 30);
-            var multiplier = PollBackoff.Multiplier(consecutiveFailures);
-            if (multiplier > 1)
+            // Failure backoff skips whole slots rather than adding an offset, so a retry
+            // still lands on the hour. Capped separately below.
+            var slots = PollBackoff.Multiplier(consecutiveFailures);
+            var delay = PollSchedule.NextDelay(DateTime.Now, interval, slots);
+
+            // With an hourly interval the 8x backoff would mean an 8-hour blackout, which is
+            // too long to notice a problem. Cap the wait itself rather than the slot count,
+            // so the same rule works whatever the interval is.
+            if (delay > MaxBackoffDelay)
             {
-                logger.LogWarning(
-                    "{Failures} consecutive failed poll(s); backing off to {Seconds}s",
-                    consecutiveFailures, jitteredSeconds * multiplier);
+                delay = PollSchedule.NextDelay(DateTime.Now, interval);
+                slots = 1;
             }
 
-            await pollSignal.WaitAsync(TimeSpan.FromSeconds(jitteredSeconds * multiplier), stoppingToken);
+            if (slots > 1)
+            {
+                logger.LogWarning(
+                    "{Failures} consecutive failed poll(s); skipping to {NextPoll:HH:mm}",
+                    consecutiveFailures, DateTime.Now + delay);
+            }
+            else
+            {
+                logger.LogInformation("Next poll at {NextPoll:HH:mm}", DateTime.Now + delay);
+            }
+
+            await pollSignal.WaitAsync(delay, stoppingToken);
         }
     }
 }
