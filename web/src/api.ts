@@ -1,6 +1,8 @@
-// The .NET API runs on :5000, this dev server on :5173 — different origins, which is why
-// Program.cs has a CORS policy naming this one.
-const BASE_URL = "http://localhost:5000";
+// Empty on purpose: requests go to whatever host served the page, and Vite proxies /api
+// through to the .NET app (see vite.config.ts). That keeps everything same-origin, so this
+// works unchanged from another device on the WiFi — a hardcoded "localhost:5000" would mean
+// *that device's* localhost, not the machine running the API.
+const BASE_URL = "";
 
 // These describe the JSON shapes the API returns. TypeScript types are COMPILE-TIME ONLY —
 // they vanish in the built JS and enforce nothing at runtime. They catch you writing
