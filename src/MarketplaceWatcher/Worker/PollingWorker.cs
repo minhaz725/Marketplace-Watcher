@@ -89,8 +89,7 @@ public class PollingWorker(
                         var matched = local
                             .Where(card => WatchMatcher.Matches(card, watch))
                             .Select(card => new Listing(
-                                // Facebook gave no title; say so rather than alerting on a blank.
-                                card.HasTitle ? card.Title : "(no title — open the link)",
+                                card.Title,
                                 card.Price,
                                 card.Location,
                                 $"https://www.facebook.com/marketplace/item/{card.ListingId}/"))

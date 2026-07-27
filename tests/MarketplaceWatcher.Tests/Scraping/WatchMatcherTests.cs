@@ -7,31 +7,30 @@ namespace MarketplaceWatcher.Tests.Scraping;
 public class WatchMatcherTests
 {
     [Fact]
-    public void A_titleless_card_still_matches_when_the_price_fits()
+    public void A_titleless_card_is_rejected_even_when_the_price_fits()
     {
-        // Facebook renders no title for many vehicle listings. Keyword filters cannot be
-        // evaluated, so we fail open rather than discard the listing entirely.
+        // Facebook renders no title for many vehicle listings, so excludeKeywords cannot be
+        // applied. Letting them through was tried and produced mostly rubbish (wrecks, parts
+        // lots, decoys) — precision beat coverage. See ADR-005.
         var card = new ScrapedCard("", 6999m, "Auckland, New Zealand", "2054673432081515");
         var watch = new WatchEntity
         {
             Name = "Toyota Prius",
             MinPrice = 1000m,
             MaxPrice = 7000m,
-            MustIncludeKeywords = ["prius"],
             ExcludeKeywords = ["wrecking", "parts"],
         };
 
-        Assert.True(WatchMatcher.Matches(card, watch));
+        Assert.False(WatchMatcher.Matches(card, watch));
     }
 
     [Fact]
-    public void A_titleless_card_is_still_rejected_on_price()
+    public void A_titleless_card_is_rejected_even_with_no_filters_configured()
     {
-        // Failing open applies to keywords only — price bounds are unaffected.
-        var card = new ScrapedCard("", 13500m, "Auckland, New Zealand", "1351174057145221");
-        var watch = new WatchEntity { Name = "Toyota Prius", MinPrice = 1000m, MaxPrice = 7000m };
+        // Not a side effect of some other filter — the missing title alone disqualifies it.
+        var card = new ScrapedCard("", 6999m, "Auckland, New Zealand", "2054673432081515");
 
-        Assert.False(WatchMatcher.Matches(card, watch));
+        Assert.False(WatchMatcher.Matches(card, new WatchEntity { Name = "Toyota Prius" }));
     }
 
     private static ScrapedCard Card(string title, decimal price) =>

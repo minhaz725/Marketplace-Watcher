@@ -8,12 +8,21 @@ export function ListingsTable({ listings }: { listings: Listing[] }) {
     return <p className="empty">No listings yet. Add a watch and hit “Poll now”.</p>;
   }
 
+  // Cheapest first. Copy before sorting — .sort() mutates in place, and mutating a prop
+  // (which is React state upstream) is how you get renders that silently disagree.
+  // Listings with no price sort last rather than as zero.
+  const sorted = [...listings].sort((a, b) => {
+    if (a.price === null) return 1;
+    if (b.price === null) return -1;
+    return a.price - b.price;
+  });
+
   return (
     <table>
       <thead>
         <tr>
           <th>Title</th>
-          <th>Price</th>
+          <th>Price ↑</th>
           <th>Location</th>
           <th>Watch</th>
           <th>Seen</th>
@@ -22,7 +31,7 @@ export function ListingsTable({ listings }: { listings: Listing[] }) {
       <tbody>
         {/* .map turns an array of data into an array of rows. React needs a stable "key"
             per row to tell them apart between renders — signature is our natural id. */}
-        {listings.map((listing) => (
+        {sorted.map((listing) => (
           <tr key={listing.signature}>
             <td>
               {listing.url ? (

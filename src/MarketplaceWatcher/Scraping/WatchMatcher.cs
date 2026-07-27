@@ -33,18 +33,17 @@ public static class WatchMatcher
             }
         }
 
-        // Roughly half of vehicle listings have no title on the card, so neither keyword
-        // filter can be evaluated. We let those through (fail open) rather than drop them:
-        // the search query already targeted the item, and dropping meant losing most real
-        // cars. Evidence for that choice — in a captured "Toyota Prius" harvest the cards
-        // WITH titles were overwhelmingly accessories (tail lights, seat covers), while the
-        // titleless ones were priced like actual vehicles.
+        // Roughly half of vehicle listings render no title on the search grid, so neither
+        // keyword filter can be evaluated for them. We drop them.
         //
-        // The cost is real and worth stating: an excluded word in a titleless listing cannot
-        // be filtered, so some wrecks and parts will get through. Price bounds still apply.
+        // This reverses the first attempt, which let them through so nothing was lost. In
+        // practice the unfilterable listings were mostly rubbish — with excludeKeywords
+        // inert, every wreck, parts lot and mispriced decoy came through. Precision beat
+        // coverage. See ADR-005. The funnel log still reports how many were dropped, so this
+        // is a visible tradeoff rather than the silent discard it used to be.
         if (!card.HasTitle)
         {
-            return true;
+            return false;
         }
 
         if (watch.MustIncludeKeywords.Length > 0 &&
