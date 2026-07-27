@@ -14,7 +14,7 @@ public sealed class TelegramNotifier(
 {
     private readonly TelegramOptions _telegram = options.Value;
 
-    public async Task NotifyAsync(Listing listing, string watchName, CancellationToken cancellationToken)
+    public async Task<bool> NotifyAsync(Listing listing, string watchName, CancellationToken cancellationToken)
     {
         var payload = new SendMessageRequest(
             ChatId: _telegram.ChatId,
@@ -34,7 +34,10 @@ public sealed class TelegramNotifier(
                 logger.LogError(
                     "Telegram send failed ({Status}) for {Title}: {Body}",
                     (int)response.StatusCode, listing.Title, body);
+                return false;
             }
+
+            return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -43,8 +46,10 @@ public sealed class TelegramNotifier(
         catch (Exception ex)
         {
             // Any other failure (network down, Telegram outage, retries exhausted) must not
-            // kill the polling loop. Losing one alert beats losing the whole watcher.
+            // kill the polling loop. Returning false keeps the listing unseen so the next
+            // poll retries it.
             logger.LogError(ex, "Telegram send threw for {Title}", listing.Title);
+            return false;
         }
     }
 

@@ -42,10 +42,57 @@ public class WatcherDbContextTests
             new Listing("Sofa", 50m, "Ponsonby", "https://facebook.com/marketplace/item/2"),
         };
 
-        await context.GetNewAsync(candidates);
+        await context.MarkSeenAsync(await context.GetNewAsync(candidates));
         var second = await context.GetNewAsync(candidates);
 
         Assert.Empty(second);
+    }
+
+    [Fact]
+    public async Task GetNewAsync_DoesNotRecordAnything_SoAFailedAlertIsRetried()
+    {
+        // The heart of at-least-once delivery: querying must not commit. If the alert fails
+        // to send we never call MarkSeenAsync, and the listing must come back next poll.
+        using var context = CreateInMemoryContext();
+        var candidates = new[]
+        {
+            new Listing("Free sofa", 0m, "Mount Eden", "https://facebook.com/marketplace/item/1"),
+        };
+
+        var first = await context.GetNewAsync(candidates);
+        var second = await context.GetNewAsync(candidates);
+
+        Assert.Single(first);
+        Assert.Single(second);
+        Assert.Equal(0, await context.Seen.CountAsync());
+    }
+
+    [Fact]
+    public async Task MarkSeenAsync_RecordsOnlyWhatItIsGiven()
+    {
+        using var context = CreateInMemoryContext();
+        var delivered = new Listing("Free sofa", 0m, "Mount Eden", "https://facebook.com/marketplace/item/1");
+        var failedToSend = new Listing("Sofa", 50m, "Ponsonby", "https://facebook.com/marketplace/item/2");
+
+        await context.GetNewAsync([delivered, failedToSend]);
+        await context.MarkSeenAsync([delivered]);
+
+        var remaining = await context.GetNewAsync([delivered, failedToSend]);
+
+        Assert.Equal([failedToSend], remaining);
+    }
+
+    [Fact]
+    public async Task MarkSeenAsync_IsSafeToCallTwiceWithTheSameListing()
+    {
+        // A signature can recur across watches within one poll; a duplicate insert would throw.
+        using var context = CreateInMemoryContext();
+        var listing = new Listing("Free sofa", 0m, "Mount Eden", "https://facebook.com/marketplace/item/1");
+
+        await context.MarkSeenAsync([listing]);
+        await context.MarkSeenAsync([listing]);
+
+        Assert.Equal(1, await context.Seen.CountAsync());
     }
 
     [Fact]
@@ -64,6 +111,7 @@ public class WatcherDbContextTests
         };
 
         var result = await context.GetNewAsync(candidates);
+        await context.MarkSeenAsync(result);
 
         Assert.Single(result);
         Assert.Equal(1, await context.Seen.CountAsync());
@@ -76,7 +124,7 @@ public class WatcherDbContextTests
         var listing = new Listing("Full Mirror", 40m, "Auckland, New Zealand", "https://facebook.com/marketplace/item/1");
         var sameContentDifferentUrl = listing with { Url = "https://facebook.com/marketplace/item/2" };
 
-        await context.GetNewAsync([listing]);
+        await context.MarkSeenAsync(await context.GetNewAsync([listing]));
         var second = await context.GetNewAsync([listing, sameContentDifferentUrl]);
 
         Assert.Empty(second);
@@ -89,7 +137,7 @@ public class WatcherDbContextTests
         var seenBefore = new Listing("Free sofa", 0m, "Mount Eden", "https://facebook.com/marketplace/item/1");
         var brandNew = new Listing("iPhone 16 Pro Max", 800m, "Newmarket", "https://facebook.com/marketplace/item/3");
 
-        await context.GetNewAsync([seenBefore]);
+        await context.MarkSeenAsync(await context.GetNewAsync([seenBefore]));
         var result = await context.GetNewAsync([seenBefore, brandNew]);
 
         Assert.Equal([brandNew], result);

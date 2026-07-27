@@ -227,8 +227,27 @@ Question raised: can we fetch only recently-posted listings instead of the whole
 - **Signature dedup deliberately kept.** The time filter narrows *what we look at*; dedup decides *what is genuinely new*. Different jobs — and if Facebook silently drops the param, dedup is the backstop.
 - ▶ Verified live: `Scraping .../search?query=macbook&daysSinceListed=1` → `Harvested 55 listings in 7 scroll round(s)` (was **142 in 12**), `Dropped 17 out-of-region`, `polled, 17 new`. **61% fewer listings, 5 fewer rounds.** No truncation warning at 7 rounds, so the 24-hour pool is now provably covered within the cap — which closes the "a brand-new listing could sit past the round cap" correctness worry from Phase 10, by shrinking the pool rather than by sorting.
 
-## ▶ NEXT: Phase 11 — polish + docs `[anchor]`
-Structured logging, error backoff, `/status`, graceful shutdown, README, on-call runbook, and **DECISIONS.md** — which now has three real ADRs queued up from Phases 9–10: (a) Telegram over WhatsApp, (b) at-most-once delivery, (c) radius is environmental.
+### Phase 11 (started) — delivery guarantee + host resilience
+Two real defects fixed. User decided: **Telegram only** (no WhatsApp implementation), **skip the radius ADR**, and `AllowedLocations` suburb curation is theirs to edit as needed.
+
+**Fix 1 — at-most-once → at-least-once delivery.** Previously `GetNewAsync` recorded listings in `Seen` *and* committed before the alert was attempted, so a Telegram outage lost alerts permanently (flagged in Phase 9, deferred then).
+- `GetNewAsync` is now **read-only** — it answers "which of these are new?" and commits nothing.
+- New `MarkSeenAsync(listings)` records them, and `PollingWorker` calls it **only with listings whose alert actually sent**.
+- `INotifier.NotifyAsync` now returns `Task<bool>` instead of `Task`; `TelegramNotifier` returns false on both non-2xx and thrown failures. Still never throws — the contract is unchanged, it just reports now.
+- Failed sends stay unseen and are retried next poll, with a `LogWarning` naming how many. **The tradeoff is now duplicates instead of losses** — if a send succeeds but the process dies before `MarkSeenAsync`, you get the alert twice. That is the right direction for an alerting tool.
+- `MarkSeenAsync` re-checks the DB before inserting, since a signature can recur across watches within one poll and a duplicate key would throw.
+- Note: `polled, {N} new` now counts **delivered** alerts, not found ones.
+
+**Fix 2 — one exception no longer kills the app.** `BackgroundServiceExceptionBehavior.StopHost` is the .NET default, so any unhandled exception in `ExecuteAsync` stopped the whole watcher silently — exactly how the `Full Mirror` crash manifested.
+- Per-watch `try/catch`: a broken watch (Playwright timeout, DOM change) logs and the loop continues to the next watch.
+- Outer `try/catch` around the whole iteration for anything else (DB, scope creation).
+- Both use the exception-filter idiom `catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` so genuine Ctrl-C shutdown still unwinds cleanly instead of being swallowed as a failure.
+- `Worker/PollBackoff.cs`: pure, test-first (8 cases). Consecutive failed polls double the interval — 1×, 2×, 4×, 8× — **capped at 8×** so a long outage still retries about every 12 minutes rather than drifting to hours. `int.MaxValue` is covered as a test case to guard the shift operator against overflow.
+- ▶ Verified live (happy path): `Harvested 49 in 6 rounds`, `Dropped 5 out-of-region`, `polled, 5 new`, all delivered, no warnings. **64/64 tests green.**
+- ⚠️ **Not yet live-tested: the failure path.** Backoff and the delivery split are covered by unit tests and by construction, but no induced live failure has been observed. The definitive check is to close the secondary-account Chrome mid-run and confirm the app logs `Watch ... failed this poll; continuing` and backs off, rather than exiting.
+
+## ▶ REMAINING in Phase 11
+Error backoff ✅ done above. Still to do: structured logging (optionally Serilog), `/status` endpoint, README run steps, on-call runbook, and **DECISIONS.md** with two ADRs — (a) Telegram over WhatsApp, (b) at-least-once delivery and why duplicates beat losses. *(The radius ADR was explicitly skipped at the user's request; the reasoning lives in the `WatchMatcher.Matches` comment and in this file.)*
 
 ## Roadmap after Phase 11 (one per session)
 12 CI · 13 React UI (watch CRUD UI now has a real API to call already) · 14 Postgres/Aspire · 15 LLM enrichment.

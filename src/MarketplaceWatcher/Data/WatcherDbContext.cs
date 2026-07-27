@@ -46,16 +46,40 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
             .Select(s => s.Signature)
             .ToHashSetAsync(cancellationToken);
 
-        var newListings = candidateList.Where(c => !alreadySeen.Contains(c.Signature)).ToList();
+        // Read-only on purpose. Recording happens in MarkSeenAsync *after* a successful
+        // notification, so a failed send leaves the listing unseen and it is retried next
+        // poll. Committing here would mean a Telegram outage silently loses alerts.
+        return candidateList.Where(c => !alreadySeen.Contains(c.Signature)).ToList();
+    }
 
-        Seen.AddRange(newListings.Select(l => new Data.Seen
+    /// <summary>
+    /// Records listings as seen. Call only for listings whose alert was actually delivered.
+    /// </summary>
+    public async Task MarkSeenAsync(IEnumerable<Listing> listings, CancellationToken cancellationToken = default)
+    {
+        var distinct = listings.DistinctBy(l => l.Signature).ToList();
+        if (distinct.Count == 0)
         {
-            Signature = l.Signature,
-            Title = l.Title,
-            SeenAt = DateTimeOffset.UtcNow,
-        }));
-        await SaveChangesAsync(cancellationToken);
+            return;
+        }
 
-        return newListings;
+        // Re-check the DB: a signature could already be present from an earlier watch in the
+        // same poll, and adding a duplicate key would throw.
+        var signatures = distinct.Select(l => l.Signature).ToList();
+        var existing = await Seen
+            .Where(s => signatures.Contains(s.Signature))
+            .Select(s => s.Signature)
+            .ToHashSetAsync(cancellationToken);
+
+        Seen.AddRange(distinct
+            .Where(l => !existing.Contains(l.Signature))
+            .Select(l => new Data.Seen
+            {
+                Signature = l.Signature,
+                Title = l.Title,
+                SeenAt = DateTimeOffset.UtcNow,
+            }));
+
+        await SaveChangesAsync(cancellationToken);
     }
 }
