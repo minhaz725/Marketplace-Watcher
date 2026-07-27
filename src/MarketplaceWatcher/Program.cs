@@ -39,6 +39,14 @@ builder.Services.AddHttpClient<INotifier, TelegramNotifier>((serviceProvider, cl
 
 builder.Services.AddSingleton<PollSignal>();
 builder.Services.AddSingleton<WatcherStatus>();
+
+// The Vite dev server runs on its own origin (:5173), and a browser blocks cross-origin
+// fetches unless the API opts in. Named policy, dev origin only — not AllowAnyOrigin.
+const string DevCorsPolicy = "vite-dev";
+builder.Services.AddCors(options => options.AddPolicy(DevCorsPolicy, policy => policy
+    .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
 builder.Services.AddSingleton<IMarketplaceScraper, MarketplaceScraper>();
 builder.Services.AddHostedService<PollingWorker>();
 
@@ -47,6 +55,11 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     scope.ServiceProvider.GetRequiredService<WatcherDbContext>().Database.Migrate();
+}
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors(DevCorsPolicy);
 }
 
 app.MapWatcherEndpoints();

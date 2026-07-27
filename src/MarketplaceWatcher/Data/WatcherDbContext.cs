@@ -55,7 +55,11 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
     /// <summary>
     /// Records listings as seen. Call only for listings whose alert was actually delivered.
     /// </summary>
-    public async Task MarkSeenAsync(IEnumerable<Listing> listings, CancellationToken cancellationToken = default)
+    public async Task MarkSeenAsync(
+        IEnumerable<Listing> listings,
+        int? watchId = null,
+        string? watchName = null,
+        CancellationToken cancellationToken = default)
     {
         var distinct = listings.DistinctBy(l => l.Signature).ToList();
         if (distinct.Count == 0)
@@ -77,7 +81,12 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
             {
                 Signature = l.Signature,
                 Title = l.Title,
-                SeenAt = DateTimeOffset.UtcNow,
+                SeenAt = DateTime.UtcNow,
+                Price = l.Price,
+                Location = l.Location,
+                Url = l.Url,
+                WatchId = watchId,
+                WatchName = watchName,
             }));
 
         await SaveChangesAsync(cancellationToken);

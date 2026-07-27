@@ -116,7 +116,7 @@ public class PollingWorker(
                         // Only delivered alerts are recorded. Anything that failed to send stays
                         // unseen and is retried next poll — at-least-once rather than the old
                         // at-most-once, where a Telegram outage lost alerts permanently.
-                        await db.MarkSeenAsync(delivered, stoppingToken);
+                        await db.MarkSeenAsync(delivered, watch.Id, watchName, stoppingToken);
 
                         if (delivered.Count != newForWatch.Count)
                         {

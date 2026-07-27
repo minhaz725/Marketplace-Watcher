@@ -22,11 +22,26 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<string>("Signature")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("SeenAt")
+                    b.Property<string>("Location")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("Price")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("SeenAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("WatchId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WatchName")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Signature");

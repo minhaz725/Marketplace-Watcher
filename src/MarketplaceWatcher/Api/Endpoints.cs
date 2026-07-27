@@ -43,6 +43,35 @@ public static class Endpoints
             return Results.Accepted();
         });
 
+        app.MapGet("/api/listings", async (WatcherDbContext db, string? watch, int? limit) =>
+        {
+            // IQueryable composes before executing: the filter and limit become SQL WHERE and
+            // LIMIT, so we never pull the whole table into memory to trim it.
+            var query = db.Seen.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(watch))
+            {
+                query = query.Where(s => s.WatchName == watch);
+            }
+
+            var listings = await query
+                .OrderByDescending(s => s.SeenAt)
+                .Take(Math.Clamp(limit ?? 50, 1, 500))
+                .Select(s => new
+                {
+                    s.Signature,
+                    s.Title,
+                    s.Price,
+                    s.Location,
+                    s.Url,
+                    s.WatchName,
+                    s.SeenAt,
+                })
+                .ToListAsync();
+
+            return Results.Ok(listings);
+        });
+
         app.MapGet("/api/watches", async (WatcherDbContext db) =>
             Results.Ok(await db.Watches.Where(w => w.IsActive).ToListAsync()));
 
