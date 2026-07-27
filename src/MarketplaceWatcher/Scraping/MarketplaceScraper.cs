@@ -1,8 +1,12 @@
+using MarketplaceWatcher.Config;
 using MarketplaceWatcher.Data;
+using Microsoft.Extensions.Options;
 
 namespace MarketplaceWatcher.Scraping;
 
-public sealed class MarketplaceScraper(ILogger<MarketplaceScraper> logger) : IMarketplaceScraper, IAsyncDisposable
+public sealed class MarketplaceScraper(
+    ILogger<MarketplaceScraper> logger,
+    IOptions<WatcherOptions> options) : IMarketplaceScraper, IAsyncDisposable
 {
     private const string CardSelector = "a[href*='/marketplace/item/']";
     private const int ScrollStepPx = 1600;
@@ -16,7 +20,7 @@ public sealed class MarketplaceScraper(ILogger<MarketplaceScraper> logger) : IMa
     public async Task<IReadOnlyList<ScrapedCard>> ScrapeAsync(WatchEntity watch, CancellationToken cancellationToken = default)
     {
         var cdp = _connection ??= await CdpConnection.ConnectAsync();
-        var url = BuildSearchUrl(watch);
+        var url = SearchUrlBuilder.Build(watch, options.Value.DaysSinceListed);
 
         var page = await cdp.Context.NewPageAsync();
         try
@@ -87,11 +91,6 @@ public sealed class MarketplaceScraper(ILogger<MarketplaceScraper> logger) : IMa
             await page.CloseAsync();
         }
     }
-
-    private static string BuildSearchUrl(WatchEntity watch) =>
-        watch.FreeOnly
-            ? "https://www.facebook.com/marketplace/category/free"
-            : $"https://www.facebook.com/marketplace/search?query={Uri.EscapeDataString(watch.Name ?? string.Empty)}";
 
     public async ValueTask DisposeAsync()
     {

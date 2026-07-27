@@ -12,6 +12,12 @@ public sealed class WatcherOptions
     /// Empty disables the filter. Add Auckland suburbs here as the log surfaces them.
     /// </summary>
     public string[] AllowedLocations { get; set; } = [];
+
+    /// <summary>
+    /// Only scrape listings posted within this many days (Marketplace's own "Date listed"
+    /// filter). Null or 0 disables it and scrapes the whole feed.
+    /// </summary>
+    public int? DaysSinceListed { get; set; } = 1;
 }
 
 public sealed class GeoPoint
