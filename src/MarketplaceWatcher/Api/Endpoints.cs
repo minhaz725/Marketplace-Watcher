@@ -13,6 +13,36 @@ public static class Endpoints
     {
         app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
+        // Liveness (/health) says the process is up. This says whether it is doing its job.
+        app.MapGet("/api/status", async (WatcherStatus status, WatcherDbContext db) =>
+        {
+            var activeWatches = await db.Watches.Where(w => w.IsActive).CountAsync();
+            var seenCount = await db.Seen.CountAsync();
+
+            return Results.Ok(new
+            {
+                healthy = status.IsHealthy,
+                lastPollAt = status.LastPollAt,
+                lastSuccessfulPollAt = status.LastSuccessfulPollAt,
+                minutesSinceLastSuccess = status.LastSuccessfulPollAt is { } t
+                    ? Math.Round((DateTimeOffset.UtcNow - t).TotalMinutes, 1)
+                    : (double?)null,
+                lastPollNewCount = status.LastPollNewCount,
+                totalAlertsSent = status.TotalAlertsSent,
+                consecutiveFailures = status.ConsecutiveFailures,
+                lastError = status.LastError,
+                activeWatches,
+                seenListings = seenCount,
+            });
+        });
+
+        // Phase 13's "Poll now" button, available early since PollSignal already exists.
+        app.MapPost("/api/poll", (PollSignal signal) =>
+        {
+            signal.Trigger();
+            return Results.Accepted();
+        });
+
         app.MapGet("/api/watches", async (WatcherDbContext db) =>
             Results.Ok(await db.Watches.Where(w => w.IsActive).ToListAsync()));
 

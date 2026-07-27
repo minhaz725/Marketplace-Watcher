@@ -14,7 +14,8 @@ public class PollingWorker(
     IOptions<WatcherOptions> options,
     IServiceScopeFactory scopeFactory,
     IMarketplaceScraper scraper,
-    PollSignal pollSignal) : BackgroundService
+    PollSignal pollSignal,
+    WatcherStatus status) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -32,6 +33,8 @@ public class PollingWorker(
         while (!stoppingToken.IsCancellationRequested)
         {
             var pollFailed = false;
+            var lastError = "";
+            status.RecordPollStarted(DateTimeOffset.UtcNow);
 
             try
             {
@@ -134,11 +137,13 @@ public class PollingWorker(
                         // One broken watch (Playwright timeout, DOM change, bad query) must
                         // not abort the other watches or the loop.
                         pollFailed = true;
+                        lastError = $"watch '{watchName}': {ex.Message}";
                         logger.LogError(ex, "Watch {Name} failed this poll; continuing", watchName);
                     }
                 }
 
                 logger.LogInformation("polled, {Count} new", allNew.Count);
+                status.RecordPollSucceeded(DateTimeOffset.UtcNow, allNew.Count);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -150,10 +155,12 @@ public class PollingWorker(
                 // (BackgroundServiceExceptionBehavior.StopHost is the default), so the
                 // watcher stopped silently instead of degrading.
                 pollFailed = true;
+                lastError = ex.Message;
                 logger.LogError(ex, "Poll iteration failed; the watcher will keep running");
             }
 
             consecutiveFailures = pollFailed ? consecutiveFailures + 1 : 0;
+            status.RecordFailures(consecutiveFailures, lastError);
 
             var jitteredSeconds = Random.Shared.Next(baseInterval - 30, baseInterval + 30);
             var multiplier = PollBackoff.Multiplier(consecutiveFailures);

@@ -9,6 +9,16 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Log messages already use named placeholders ("{Count} new" rather than string
+// interpolation), which is what makes them *structured* — the values stay as discrete
+// fields rather than being flattened into text. This just makes the console rendering
+// of that readable: timestamps, one line per entry.
+builder.Logging.AddSimpleConsole(o =>
+{
+    o.TimestampFormat = "HH:mm:ss ";
+    o.SingleLine = true;
+});
 builder.Services.Configure<WatcherOptions>(builder.Configuration.GetSection(WatcherOptions.Section));
 builder.Services.AddDbContext<WatcherDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Watcher")));
@@ -28,6 +38,7 @@ builder.Services.AddHttpClient<INotifier, TelegramNotifier>((serviceProvider, cl
     .AddStandardResilienceHandler();
 
 builder.Services.AddSingleton<PollSignal>();
+builder.Services.AddSingleton<WatcherStatus>();
 builder.Services.AddSingleton<IMarketplaceScraper, MarketplaceScraper>();
 builder.Services.AddHostedService<PollingWorker>();
 
