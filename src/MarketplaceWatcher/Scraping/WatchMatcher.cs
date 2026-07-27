@@ -33,6 +33,20 @@ public static class WatchMatcher
             }
         }
 
+        // Roughly half of vehicle listings have no title on the card, so neither keyword
+        // filter can be evaluated. We let those through (fail open) rather than drop them:
+        // the search query already targeted the item, and dropping meant losing most real
+        // cars. Evidence for that choice — in a captured "Toyota Prius" harvest the cards
+        // WITH titles were overwhelmingly accessories (tail lights, seat covers), while the
+        // titleless ones were priced like actual vehicles.
+        //
+        // The cost is real and worth stating: an excluded word in a titleless listing cannot
+        // be filtered, so some wrecks and parts will get through. Price bounds still apply.
+        if (!card.HasTitle)
+        {
+            return true;
+        }
+
         if (watch.MustIncludeKeywords.Length > 0 &&
             !watch.MustIncludeKeywords.All(k => card.Title.Contains(k, StringComparison.OrdinalIgnoreCase)))
         {

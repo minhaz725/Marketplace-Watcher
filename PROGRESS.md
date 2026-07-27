@@ -277,6 +277,18 @@ Phase 12 (CI) **skipped for now** at the user's request — still pending.
 - ▶ Verified: `npx tsc --noEmit` clean, `npm run build` succeeds, Vite dev server returns 200, and the API returns `Access-Control-Allow-Origin: http://localhost:5173` **on the real GET** (a passing preflight alone wouldn't prove that).
 - **Not yet verified: the actual rendered page.** Needs a human to open `http://localhost:5173` with both servers running. Everything up to the browser is confirmed.
 
+### Bugfix — half of vehicle listings were silently discarded
+A `Toyota Prius` watch alerted on nothing. Diagnosis, in order, each step ruling something out:
+- Added a **per-watch funnel log** (`N harvested → in-region → passed filters → not seen before`) because the existing logs showed only the endpoints, so three different filters could have caused "42 harvested, 0 alerts" and nothing distinguished them. It showed `46 → 38 in-region → 0 passed filters`: **not the location filter.**
+- Dumped every raw `aria-label` (temporary `--dump` scaffold, deleted). **54 of 104 cards failed to parse**, all starting straight at the price: `, NZ$6,999, Auckland, New Zealand, listing 2054673432081515`. **No title.** `CardParser` required one (`.+?`), returned `null`, and `MarketplaceScraper` skipped nulls **with no logging at all**.
+- Ruled out lazy rendering with two experiments rather than assuming: a 5s wait per scroll moved failures 52%→42% *while harvesting fewer cards*; a 500px scroll step made it **worse** (55%). Then checked the card's `innerText` and every ancestor element — the title is nowhere in the DOM. It exists only on the listing's own page.
+- **Fix:** title regex `.+?` → `.*?`; new `ScrapedCard.HasTitle`; `WatchMatcher` skips both keyword filters when there is no title (**fails open** — see **ADR-005** for why, and what it costs); alerts/UI show `(no title — open the link)`; the funnel now reports `(M with no title)` so the blind spot is visible.
+- ▶ Verified: `104 harvested (54 with no title) → 73 in-region → 34 passed filters → 30 not seen before`, and the specific listing the user asked about is now in `Seen`. **0 → 30 alerts.** The `macbook` watch reports `0 with no title`, confirming this is vehicle-specific — which is why it never surfaced across all the earlier laptop/sofa testing. **68/68 tests green.**
+- **Pattern worth noticing:** this is the third silent-drop bug this project has had (harvest truncation in Phase 10, intra-batch signature collisions, now unparseable cards). Each time the data disappeared without a log line, and each time the fix was as much about *making the loss visible* as about the loss itself.
+
+### UI — filter listings by watch
+Watch cards in the sidebar are now buttons: clicking one filters the table to that watch, clicking again clears (plus a "Show all listings" button). Uses a real `<button>` for focus/keyboard behaviour, filters **server-side** via `/api/listings?watch=`, and `selectedWatch` is a dependency of the `refresh` callback so the fetch re-runs on click.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

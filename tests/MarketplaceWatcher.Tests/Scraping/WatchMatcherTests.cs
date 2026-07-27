@@ -6,6 +6,34 @@ namespace MarketplaceWatcher.Tests.Scraping;
 
 public class WatchMatcherTests
 {
+    [Fact]
+    public void A_titleless_card_still_matches_when_the_price_fits()
+    {
+        // Facebook renders no title for many vehicle listings. Keyword filters cannot be
+        // evaluated, so we fail open rather than discard the listing entirely.
+        var card = new ScrapedCard("", 6999m, "Auckland, New Zealand", "2054673432081515");
+        var watch = new WatchEntity
+        {
+            Name = "Toyota Prius",
+            MinPrice = 1000m,
+            MaxPrice = 7000m,
+            MustIncludeKeywords = ["prius"],
+            ExcludeKeywords = ["wrecking", "parts"],
+        };
+
+        Assert.True(WatchMatcher.Matches(card, watch));
+    }
+
+    [Fact]
+    public void A_titleless_card_is_still_rejected_on_price()
+    {
+        // Failing open applies to keywords only — price bounds are unaffected.
+        var card = new ScrapedCard("", 13500m, "Auckland, New Zealand", "1351174057145221");
+        var watch = new WatchEntity { Name = "Toyota Prius", MinPrice = 1000m, MaxPrice = 7000m };
+
+        Assert.False(WatchMatcher.Matches(card, watch));
+    }
+
     private static ScrapedCard Card(string title, decimal price) =>
         new(title, price, "Auckland, New Zealand", "123");
 

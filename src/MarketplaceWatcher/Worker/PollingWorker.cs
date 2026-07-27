@@ -89,7 +89,8 @@ public class PollingWorker(
                         var matched = local
                             .Where(card => WatchMatcher.Matches(card, watch))
                             .Select(card => new Listing(
-                                card.Title,
+                                // Facebook gave no title; say so rather than alerting on a blank.
+                                card.HasTitle ? card.Title : "(no title — open the link)",
                                 card.Price,
                                 card.Location,
                                 $"https://www.facebook.com/marketplace/item/{card.ListingId}/"))
@@ -101,9 +102,10 @@ public class PollingWorker(
                         // gives no clue whether the location filter, the price band or an
                         // exclude keyword ate them.
                         logger.LogInformation(
-                            "Watch {Name} funnel: {Harvested} harvested → {Local} in-region → "
-                            + "{Matched} passed filters → {New} not seen before",
-                            watchName, cards.Count, local.Count, matched.Count, newForWatch.Count);
+                            "Watch {Name} funnel: {Harvested} harvested ({Titleless} with no title) → "
+                            + "{Local} in-region → {Matched} passed filters → {New} not seen before",
+                            watchName, cards.Count, cards.Count(c => !c.HasTitle),
+                            local.Count, matched.Count, newForWatch.Count);
 
                         var delivered = new List<Listing>();
 

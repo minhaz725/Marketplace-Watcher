@@ -58,6 +58,32 @@ public class CardParserTests
     }
 
     [Fact]
+    public void Parses_a_card_that_has_no_title_at_all()
+    {
+        // Real capture. Roughly half of vehicle listings render NO title on the search grid —
+        // not in the aria-label, not in the card's innerText, not at any ancestor level. The
+        // title exists only on the listing's own page. Returning null here silently discarded
+        // 54 of 104 harvested cards on a "Toyota Prius" search, including the one the user
+        // was looking for.
+        var result = CardParser.Parse(", NZ$6,999, Auckland, New Zealand, listing 2054673432081515");
+
+        Assert.NotNull(result);
+        Assert.Equal("", result!.Title);
+        Assert.False(result.HasTitle);
+        Assert.Equal(6999m, result.Price);
+        Assert.Equal("Auckland, New Zealand", result.Location);
+        Assert.Equal("2054673432081515", result.ListingId);
+    }
+
+    [Fact]
+    public void Reports_HasTitle_for_a_normal_card()
+    {
+        var result = CardParser.Parse("Sofa, NZ$30, Auckland, New Zealand, listing 1349379546738767");
+
+        Assert.True(result!.HasTitle);
+    }
+
+    [Fact]
     public void Returns_null_for_unrecognised_format()
     {
         var result = CardParser.Parse("not a marketplace aria-label at all");

@@ -130,6 +130,55 @@ Reconnaissance is throwaway: a temporary file plus a CLI flag, deleted once it h
 
 ---
 
+## ADR-005 — Titleless cards fail open
+
+**Status:** accepted · **Date:** 2026-07-28
+
+### Context
+
+A Toyota Prius watch harvested 46 listings and alerted on none. Investigation found that
+**about half of vehicle listings render no title on the Marketplace search grid** — not in the
+`aria-label`, not in the card's `innerText`, and not at any ancestor element. The label starts
+straight at the price: `, NZ$6,999, Auckland, New Zealand, listing 2054673432081515`.
+
+`CardParser`'s regex required a title (`.+?`), so those cards parsed as `null`, and
+`MarketplaceScraper` skipped nulls **without logging anything**. On one capture that was
+**54 of 104 cards silently discarded**.
+
+Ruled out first: it is not lazy rendering. A 5-second wait per scroll only moved failures from
+52% to 42% while harvesting fewer cards overall, and a smaller 500px scroll step made it *worse*
+(55%). The title genuinely is not in the DOM; it exists only on the listing's own page.
+
+### Decision
+
+Parse titleless cards (`.*?`), expose `ScrapedCard.HasTitle`, and in `WatchMatcher` **skip both
+keyword filters when there is no title** — let the listing through. Price and location filters
+still apply. Alerts and the UI show `(no title — open the link)`.
+
+### Why fail open rather than closed
+
+The search query has already targeted the item, and the evidence says the discarded half is the
+half worth keeping: in the captured harvest, cards **with** titles were overwhelmingly accessories
+(tail lights, seat covers, tow bars), while the titleless ones were priced like actual vehicles.
+Failing closed optimised for precision at the cost of losing nearly every real car.
+
+### Consequences
+
+- **`excludeKeywords` cannot filter titleless listings**, so some wrecks and parts will get
+  through on vehicle searches. Accepted: price bounds still apply, and a false positive you can
+  dismiss beats a missed listing you never learn about.
+- `mustIncludeKeywords` likewise cannot tighten precision there.
+- The funnel log now reports `N harvested (M with no title)` so the size of the blind spot is
+  visible per poll rather than inferred.
+
+### Alternatives rejected
+
+- **Fetch each titleless listing's detail page for its title** — correct, but ~30 extra page
+  loads per poll on one watch, which breaks the gentle-scraping rule (CLAUDE.md §5).
+- **Keep dropping them** — the status quo, and the actual bug.
+
+---
+
 ## ADR-004 — Search radius is environmental
 
 **Status:** accepted · **Date:** 2026-07-27
