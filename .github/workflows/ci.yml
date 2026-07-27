@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch cancels the previous run — no point finishing CI
+# for a commit that has already been superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: .NET — build, test, format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Cache the NuGet package folder keyed on the lock-ish inputs, so unchanged
+      # dependencies are not re-downloaded on every run.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore
+
+      # --no-restore because restore already ran; warnings become errors so CI
+      # fails on things a local build would let you ignore.
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+      # Formatting is a gate, not a suggestion. Fails if `dotnet format` would
+      # change anything, so style never becomes a code-review topic.
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+  frontend:
+    name: React — typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # `npm ci` not `npm install` — installs exactly the lockfile, and fails if
+      # package.json and the lockfile disagree.
+      - name: Install
+        run: npm ci
+
+      # tsc separately from the build: Vite transpiles without type-checking, so a
+      # type error would otherwise sail straight through `npm run build`.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

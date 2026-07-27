@@ -66,14 +66,14 @@ public class WatchMatcherTests
         decimal? maxPrice = null,
         string[]? mustIncludeKeywords = null,
         string[]? excludeKeywords = null) => new()
-    {
-        FreeOnly = freeOnly,
-        MinPrice = minPrice,
-        MaxPrice = maxPrice,
-        MustIncludeKeywords = mustIncludeKeywords ?? [],
-        ExcludeKeywords = excludeKeywords ?? [],
-        CreatedAt = DateTimeOffset.UtcNow,
-    };
+        {
+            FreeOnly = freeOnly,
+            MinPrice = minPrice,
+            MaxPrice = maxPrice,
+            MustIncludeKeywords = mustIncludeKeywords ?? [],
+            ExcludeKeywords = excludeKeywords ?? [],
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
 
     [Fact]
     public void FreeOnlyWatch_MatchesZeroPricedCard()

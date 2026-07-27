@@ -307,6 +307,20 @@ A `Toyota Prius` watch alerted on nothing. Diagnosis, in order, each step ruling
 - Logs `Next poll at 04:00` after every cycle, so the schedule is visible rather than inferred.
 - ▶ Verified live: started 03:30 → `Polling every 01:00:00, aligned to the clock. First poll now, then 04:00.` → `polled, 0 new` → `Next poll at 04:00`. **83/83 tests green.**
 
+### Phase 12 — CI (GitHub Actions)
+- `.github/workflows/ci.yml`, two jobs on every push/PR to `main`:
+  - **backend**: `restore` → `build -warnaserror --configuration Release` → `test` → `dotnet format --verify-no-changes`
+  - **frontend**: `npm ci` → `npx tsc --noEmit` → `npm run build`
+- `-warnaserror` so CI fails on warnings a local build scrolls past. `tsc --noEmit` runs **separately from the build** because Vite transpiles without type-checking — a type error would otherwise pass `npm run build` unnoticed. `npm ci` not `npm install`, so the lockfile is installed exactly and a drifted `package.json` fails loudly. NuGet cache keyed on `**/*.csproj`; `concurrency` cancels superseded runs.
+- **Ran every CI step locally before committing, and the format gate failed immediately** — `tests/.../WatchMatcherTests.cs` had whitespace violations. An earlier check had only covered `src/`. Fixed with `dotnet format`; the gate proved its worth before it ever ran on GitHub.
+- **No CD, deliberately** — the app attaches over CDP to a Chrome on the user's machine with their logged-in Facebook session, so there is nothing to deploy it *to*. Deploying would mean solving headless auth, which is the exact thing CLAUDE.md §5's attach-only design avoids. Stated plainly in the README rather than faked with a hollow deploy step.
+- ⏭️ Still to do by hand: **branch protection on `main`** (require the CI check to pass) — a GitHub settings change, not a repo change.
+
+### Docs — architecture + system design in README
+- Two **Mermaid diagrams** (GitHub renders them natively, no image assets to go stale): a component diagram of the single .NET host — API + `PollingWorker` + `PollSignal` + notifier, with SQLite, CDP Chrome and Telegram outside it — and a flowchart of one poll from search URL through harvest → parse → title recovery → location → watch filters → dedup → send → `MarkSeenAsync`.
+- New sections: **why the architecture looks like this** (one process/two roles, `PollSignal` over flag-polling, attach-never-launch, scope-per-iteration), a **data model table** explaining why `Seen` and `CheckedListings` are separate, and an **ADR index**.
+- Refreshed stale content the last few sessions had outrun: jittered 60–120s → clock-aligned, 64 → 83 tests, added title recovery, and the status banner no longer claims the UI and CI are missing.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 
