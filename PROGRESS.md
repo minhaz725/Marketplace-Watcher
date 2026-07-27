@@ -257,6 +257,26 @@ Two real defects fixed. User decided: **Telegram only** (no WhatsApp implementat
 - **`README.md` rewritten.** The old one described things that do not exist (React dashboard, GitHub Actions CI) and one that never did — "reconstructs CSS-shuffled decoy text", a defence carried over from House Hunt that Phase 7 disproved for Marketplace. Now describes what is actually built, with a status banner pointing here.
 - ▶ Verified live: `/api/status` returned real values mid-run; logs are timestamped single-line with EF noise gone; `Dropped 21 out-of-region` contained **no Auckland suburbs** (Orewa at ~40 km correctly excluded). **64/64 tests green.**
 
+### Phase 13 (started) — React UI `[core]`
+Phase 12 (CI) **skipped for now** at the user's request — still pending.
+
+**Backend prep — a blocker found first.** `Seen` was built in Phase 4 as a pure *dedup ledger*: signature, title, timestamp were all the poll loop needed. The UI spec wants title/price/location/posted/link/matched-watch — **four of six weren't stored.** So Phase 13 started with a schema change, not React.
+- `Seen` gains `Price`, `Location`, `Url`, `WatchId`, `WatchName`, all nullable (211 earlier rows exist). `WatchName` is **denormalized on purpose** — history should show what matched *then*, even if the watch is later renamed or deleted.
+- ⚠️ **`SeenAt` changed from `DateTimeOffset` to `DateTime`.** SQLite **cannot `ORDER BY` a `DateTimeOffset`** (`System.NotSupportedException`) — it has no date type and EF stores the offset inside the text. Newest-first is the whole point of `/api/listings`. We only ever wrote `UtcNow`, so nothing is lost.
+- ⚠️⚠️ **The migration EF generated for that was completely EMPTY** — both types map to SQLite `TEXT`, so the model diff saw no change. But the stored *format* changed: existing rows read `2026-07-26 04:18:04.035767+00:00`, which `DateTime` cannot parse. **EF migrations diff the model, never the data.** Had to hand-write `migrationBuilder.Sql("UPDATE Seen SET SeenAt = replace(SeenAt, '+00:00', '') ...")` plus the inverse in `Down`. A no-op migration hiding a breaking data change is worth remembering — the contrast with Flyway (where you write the SQL and would have noticed) is sharp.
+- `GET /api/listings?watch=&limit=` — composes `IQueryable` so the filter and limit become SQL `WHERE`/`LIMIT`; limit clamped 1–500. `POST /api/poll` was added back in Phase 11.
+- CORS: a **named policy scoped to `http://localhost:5173`**, applied only in Development. Not `AllowAnyOrigin`.
+- ▶ Verified: deleted one `Seen` row, re-polled, and confirmed the new row came back with price/location/url/watchName populated — proving the write path, not just the schema.
+
+**Frontend (`web/`, Vite + React + TS).**
+- `npm create vite@latest web -- --template react-ts`. Template demo page, `App.css` and `assets/` deleted.
+- `src/api.ts` — typed fetch client. Interfaces for `Listing`/`Watch`/`Status`; a `get<T>` helper that checks `response.ok`, since **`fetch` only rejects on network failure — a 500 resolves normally**.
+- Three components, as the spec asked: `ListingsTable` (pure, props-only), `StatusBar` (health pill, last-poll age, counts, "Poll now"), `WatchesPanel` (read-only).
+- `App.tsx` owns all state (`useState`) and does the fetching (`useEffect` + `setInterval` every 10s, with the cleanup function returned so the timer doesn't leak). `Promise.all` fires the three requests together. `useCallback` keeps `refresh` stable so the effect doesn't restart each render.
+- Gotcha handled: the API sends UTC **without a trailing `Z`**, so `new Date(iso)` would read it as local time. `formatSeenAt` appends `Z` explicitly.
+- ▶ Verified: `npx tsc --noEmit` clean, `npm run build` succeeds, Vite dev server returns 200, and the API returns `Access-Control-Allow-Origin: http://localhost:5173` **on the real GET** (a passing preflight alone wouldn't prove that).
+- **Not yet verified: the actual rendered page.** Needs a human to open `http://localhost:5173` with both servers running. Everything up to the browser is confirmed.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 
