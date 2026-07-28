@@ -94,6 +94,19 @@ public static class Endpoints
                 return Results.BadRequest("Min price cannot be higher than max price.");
             }
 
+            // A keyword in both lists makes the watch unsatisfiable — every listing is
+            // simultaneously required and rejected, so it silently matches nothing forever.
+            var contradictions = (request.MustIncludeKeywords ?? [])
+                .Intersect(request.ExcludeKeywords ?? [], StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (contradictions.Count > 0)
+            {
+                return Results.BadRequest(
+                    $"These keywords are in both must-include and exclude, so nothing could ever "
+                    + $"match: {string.Join(", ", contradictions)}");
+            }
+
             var watch = new WatchEntity
             {
                 Name = request.Name,

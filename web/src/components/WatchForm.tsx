@@ -30,6 +30,12 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
   const min = minPrice === "" ? null : Number(minPrice);
   const max = maxPrice === "" ? null : Number(maxPrice);
 
+  // A keyword in both lists makes the watch unsatisfiable — it would silently match nothing
+  // forever, which is exactly the kind of failure that is painful to diagnose later.
+  const contradictions = splitKeywords(mustInclude).filter((k) =>
+    splitKeywords(exclude).some((e) => e.toLowerCase() === k.toLowerCase()),
+  );
+
   // Validation is computed during render rather than stored in state — deriving it means
   // it can never fall out of sync with the fields it describes.
   const validationError =
@@ -41,7 +47,9 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
           ? "Max price must be a number."
           : min !== null && max !== null && min > max
             ? "Min price can’t be higher than max price."
-            : null;
+            : contradictions.length > 0
+              ? `“${contradictions.join(", ")}” is in both must-include and exclude — nothing could ever match.`
+              : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); // Stop the browser doing a full page reload.
