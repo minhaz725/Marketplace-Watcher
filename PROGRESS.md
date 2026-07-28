@@ -321,6 +321,23 @@ A `Toyota Prius` watch alerted on nothing. Diagnosis, in order, each step ruling
 - New sections: **why the architecture looks like this** (one process/two roles, `PollSignal` over flag-polling, attach-never-launch, scope-per-iteration), a **data model table** explaining why `Seen` and `CheckedListings` are separate, and an **ADR index**.
 - Refreshed stale content the last few sessions had outrun: jittered 60–120s → clock-aligned, 64 → 83 tests, added title recovery, and the status banner no longer claims the UI and CI are missing.
 
+### Bugfix — stale CDP connection never recovered
+Live failure: `ArgumentOutOfRangeException` from `CdpConnection.Context` (`_browser.Contexts[0]`) on every watch, every poll, after Chrome was closed and restarted.
+- **Cause:** `MarketplaceScraper` cached the connection with `_connection ??=` and never checked it was still alive. Restarting Chrome leaves the cached `IBrowser` object alive but with **zero contexts**, so `Contexts[0]` threw forever — the app never recovered without a restart. Note `IsConnected` alone would *not* have caught this, hence `IsUsable` checking both it and `Contexts.Count > 0`.
+- **Fix:** `GetConnectionAsync()` validates the cached connection, disposes and reconnects if stale (logging `CDP connection went stale …; reconnecting`). `DisposeAsync` now swallows errors, since it runs precisely when the connection is suspected dead. `Context` throws a message naming the actual problem instead of an index error.
+- ✅ **This also finally exercised the Phase 11 resilience path live** — the app logged `Watch macbook failed this poll; continuing` and stayed up rather than dying. That outstanding verification is now done, just not deliberately.
+- ⚠️ **RUNBOOK was wrong** and has been corrected: it claimed "the app recovers on its own once Chrome is back." That was false until this fix.
+
+### Phase 13 (cont.) — create and delete watches from the UI
+- `components/WatchForm.tsx`: "+ New" expands an inline form (search term, free-only, min/max price, must-include, exclude), with a `×` and a Cancel button, **Escape to close** (listener cleaned up on unmount so opens don't stack), and `autoFocus` on the first field.
+- **Validation is derived during render, not stored in state** — a `validationError` computed from the current fields can never fall out of sync with them, which a `useState` mirror would. Submit is disabled while invalid or in flight, so a double-click cannot create two watches.
+- Price inputs are **hidden** when free-only is ticked, because the server ignores them in that case and showing them would imply otherwise.
+- Keywords are entered comma-separated and split/trimmed client-side into the `string[]` the API expects.
+- **Server-side validation added too** (`POST /api/watches` → 400 with a readable reason for: no name when not free-only, negative prices, min > max). The client checks are for feedback; anything can POST. The client surfaces the server's message rather than a bare status code.
+- **Delete added** — the `DELETE /api/watches/{id}` endpoint had existed since Phase 7 with no UI at all. Each row gets a `×` with a confirm dialog, and deleting the currently-filtered watch clears the filter so the table isn't left filtering by something no longer listed.
+- Watch cards now also show `must include` keywords, which `describeFilters` had been silently omitting.
+- ▶ Verified: create → appears in list → delete → gone, round-tripped against the running API. Typecheck + production build clean; backend `-warnaserror` build, 83/83 tests, and `format --verify-no-changes` all pass.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

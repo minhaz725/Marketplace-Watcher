@@ -86,6 +86,7 @@ export default function App() {
           watches={watches}
           selected={selectedWatch}
           onSelect={setSelectedWatch}
+          onChanged={() => void refresh()}
         />
       </main>
     </div>

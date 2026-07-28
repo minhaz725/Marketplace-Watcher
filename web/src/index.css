@@ -191,3 +191,97 @@ td a:hover { text-decoration: underline; }
   border: 1px solid var(--border);
   font-size: 0.8125rem;
 }
+
+/* Watches panel — header, create form, delete */
+.watches-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+button.small {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+
+.icon-button {
+  padding: 0 0.4rem;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover { color: var(--bad); }
+
+.watch-row { display: flex; align-items: stretch; gap: 0.25rem; }
+.watch-row .watch-card { flex: 1; }
+.watch-delete { align-self: center; }
+
+.watch-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+}
+
+.watch-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.watch-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.watch-form label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--fg);
+  font-size: 0.8125rem;
+}
+
+.watch-form input[type="text"],
+.watch-form input[type="number"],
+.watch-form input:not([type]) {
+  padding: 0.35rem 0.45rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.watch-form input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.watch-form-row { display: flex; gap: 0.5rem; }
+.watch-form-row label { flex: 1; }
+
+.watch-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.hint { margin: 0; color: var(--muted); font-size: 0.7rem; }
+.form-error { margin: 0; color: var(--bad); font-size: 0.75rem; }

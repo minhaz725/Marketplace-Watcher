@@ -17,9 +17,34 @@ public sealed class MarketplaceScraper(
 
     private CdpConnection? _connection;
 
+    /// <summary>
+    /// Returns a live CDP connection, reconnecting if the cached one has gone stale.
+    ///
+    /// Connecting spins up a Playwright driver process, so the connection is reused across
+    /// polls. But Chrome restarting leaves the cached IBrowser alive with **no contexts**,
+    /// and the old `_connection ??=` never noticed — every poll then failed forever until
+    /// the app itself was restarted.
+    /// </summary>
+    private async Task<CdpConnection> GetConnectionAsync()
+    {
+        if (_connection is { IsUsable: true })
+        {
+            return _connection;
+        }
+
+        if (_connection is not null)
+        {
+            logger.LogWarning("CDP connection went stale (Chrome closed or restarted); reconnecting");
+            await _connection.DisposeAsync();
+            _connection = null;
+        }
+
+        return _connection = await CdpConnection.ConnectAsync();
+    }
+
     public async Task<IReadOnlyList<ScrapedCard>> ScrapeAsync(WatchEntity watch, CancellationToken cancellationToken = default)
     {
-        var cdp = _connection ??= await CdpConnection.ConnectAsync();
+        var cdp = await GetConnectionAsync();
         var url = SearchUrlBuilder.Build(watch, options.Value.DaysSinceListed);
 
         var page = await cdp.Context.NewPageAsync();
@@ -94,7 +119,7 @@ public sealed class MarketplaceScraper(
 
     public async Task<string?> FetchTitleAsync(string listingId, CancellationToken cancellationToken = default)
     {
-        var cdp = _connection ??= await CdpConnection.ConnectAsync();
+        var cdp = await GetConnectionAsync();
         var page = await cdp.Context.NewPageAsync();
         try
         {

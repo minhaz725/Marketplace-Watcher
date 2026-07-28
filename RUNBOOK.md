@@ -54,8 +54,13 @@ No response → restart it:
   --remote-debugging-port=9222 --user-data-dir="$HOME/.fb-secondary-chrome"
 ```
 
-The app recovers on its own once Chrome is back — it backs off but keeps retrying, and does not
-need restarting.
+The app recovers on its own once Chrome is back: the poll loop notices the cached CDP connection
+has gone stale, logs `CDP connection went stale (Chrome closed or restarted); reconnecting`, and
+reconnects on the next poll. No app restart needed.
+
+(Before the reconnect fix this was **not** true — a restarted Chrome left the app failing every
+poll forever with `Index was out of range` from `CdpConnection.Context`. If you see that, you are
+running a build from before the fix.)
 
 ### 3. Is the Facebook session still logged in?
 

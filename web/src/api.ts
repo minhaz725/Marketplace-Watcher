@@ -50,6 +50,16 @@ async function get<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** Matches the server's CreateWatchRequest. Omitted fields are null/empty server-side. */
+export interface CreateWatchRequest {
+  name: string | null;
+  freeOnly: boolean;
+  minPrice: number | null;
+  maxPrice: number | null;
+  mustIncludeKeywords: string[];
+  excludeKeywords: string[];
+}
+
 export const api = {
   listings: (watch?: string | null, limit = 100) => {
     // encodeURIComponent so a watch name with spaces or "&" survives the query string.
@@ -63,6 +73,30 @@ export const api = {
     const response = await fetch(`${BASE_URL}/api/poll`, { method: "POST" });
     if (!response.ok) {
       throw new Error(`POST /api/poll failed: ${response.status}`);
+    }
+  },
+
+  createWatch: async (request: CreateWatchRequest): Promise<Watch> => {
+    const response = await fetch(`${BASE_URL}/api/watches`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      // The server explains *why* a 400 happened; surfacing the status alone would
+      // leave the user guessing.
+      const detail = await response.text();
+      throw new Error(detail || `POST /api/watches failed: ${response.status}`);
+    }
+
+    return response.json() as Promise<Watch>;
+  },
+
+  deleteWatch: async (id: number): Promise<void> => {
+    const response = await fetch(`${BASE_URL}/api/watches/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error(`DELETE /api/watches/${id} failed: ${response.status}`);
     }
   },
 };

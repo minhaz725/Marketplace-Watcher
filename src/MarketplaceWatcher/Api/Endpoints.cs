@@ -77,6 +77,23 @@ public static class Endpoints
 
         app.MapPost("/api/watches", async (CreateWatchRequest request, WatcherDbContext db, PollSignal signal) =>
         {
+            // The UI validates the same rules, but that is for feedback, not correctness —
+            // anything can POST here. Returning the reason as text so the client can show it.
+            if (!request.FreeOnly && string.IsNullOrWhiteSpace(request.Name))
+            {
+                return Results.BadRequest("A watch needs a search term unless it is free-only.");
+            }
+
+            if (request.MinPrice is < 0 || request.MaxPrice is < 0)
+            {
+                return Results.BadRequest("Prices cannot be negative.");
+            }
+
+            if (request.MinPrice is { } min && request.MaxPrice is { } max && min > max)
+            {
+                return Results.BadRequest("Min price cannot be higher than max price.");
+            }
+
             var watch = new WatchEntity
             {
                 Name = request.Name,
