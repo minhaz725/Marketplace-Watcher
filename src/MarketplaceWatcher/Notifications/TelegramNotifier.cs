@@ -14,10 +14,17 @@ public sealed class TelegramNotifier(
 {
     private readonly TelegramOptions _telegram = options.Value;
 
-    public async Task<bool> NotifyAsync(Listing listing, string watchName, CancellationToken cancellationToken)
+    public async Task<bool> NotifyAsync(
+        Listing listing,
+        string watchName,
+        string? chatId,
+        CancellationToken cancellationToken)
     {
+        // Per-watch recipient wins; otherwise the configured default.
+        var recipient = string.IsNullOrWhiteSpace(chatId) ? _telegram.ChatId : chatId.Trim();
+
         var payload = new SendMessageRequest(
-            ChatId: _telegram.ChatId,
+            ChatId: recipient,
             Text: BuildMessage(listing, watchName),
             ParseMode: "HTML");
 
@@ -32,8 +39,8 @@ public sealed class TelegramNotifier(
                 // not the status code — so log the body or you are debugging blind.
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 logger.LogError(
-                    "Telegram send failed ({Status}) for {Title}: {Body}",
-                    (int)response.StatusCode, listing.Title, body);
+                    "Telegram send failed ({Status}) for {Title} to chat {ChatId}: {Body}",
+                    (int)response.StatusCode, listing.Title, recipient, body);
                 return false;
             }
 

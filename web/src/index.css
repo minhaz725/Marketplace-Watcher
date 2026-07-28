@@ -285,3 +285,11 @@ button.secondary {
 
 .hint { margin: 0; color: var(--muted); font-size: 0.7rem; }
 .form-error { margin: 0; color: var(--bad); font-size: 0.75rem; }
+
+.watch-recipient {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}

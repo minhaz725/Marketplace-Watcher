@@ -13,6 +13,7 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
   const [maxPrice, setMaxPrice] = useState("");
   const [mustInclude, setMustInclude] = useState("");
   const [exclude, setExclude] = useState("");
+  const [chatId, setChatId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +66,7 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
         maxPrice: freeOnly ? null : max,
         mustIncludeKeywords: splitKeywords(mustInclude),
         excludeKeywords: splitKeywords(exclude),
+        chatId: chatId.trim() === "" ? null : chatId.trim(),
       });
       onCreated();
     } catch (err) {
@@ -154,8 +156,20 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
         />
       </label>
 
+      <label>
+        Send to (Telegram chat id)
+        <input
+          value={chatId}
+          onChange={(e) => setChatId(e.target.value)}
+          placeholder="blank = default recipient"
+          disabled={submitting}
+        />
+      </label>
+
       <p className="hint">
         Keywords are comma-separated and matched against the listing title, case-insensitively.
+        Leave “send to” blank to use the default chat. A bot can’t message someone who hasn’t
+        pressed Start on it first.
       </p>
 
       {(validationError || error) && (

@@ -9,4 +9,5 @@ public sealed record CreateWatchRequest(
     string[]? MustIncludeKeywords,
     string[]? ExcludeKeywords,
     string? Condition,
-    string? Category);
+    string? Category,
+    string? ChatId = null);

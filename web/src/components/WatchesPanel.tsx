@@ -71,6 +71,9 @@ export function WatchesPanel({ watches, selected, onSelect, onChanged }: Watches
                 >
                   <span className="watch-name">{name}</span>
                   <span className="muted">{describeFilters(watch)}</span>
+                  <span className="watch-recipient">
+                    → {watch.chatId ?? "default recipient"}
+                  </span>
                 </button>
 
                 <button

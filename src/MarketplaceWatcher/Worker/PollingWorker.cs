@@ -209,7 +209,7 @@ public class PollingWorker(
                                 listing.Price,
                                 listing.Url);
 
-                            if (await notifier.NotifyAsync(listing, watchName, stoppingToken))
+                            if (await notifier.NotifyAsync(listing, watchName, watch.ChatId, stoppingToken))
                             {
                                 delivered.Add(listing);
                             }

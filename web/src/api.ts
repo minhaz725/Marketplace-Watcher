@@ -25,6 +25,8 @@ export interface Watch {
   maxPrice: number | null;
   mustIncludeKeywords: string[];
   excludeKeywords: string[];
+  /** null = the default recipient from config. */
+  chatId: string | null;
   isActive: boolean;
 }
 
@@ -58,6 +60,7 @@ export interface CreateWatchRequest {
   maxPrice: number | null;
   mustIncludeKeywords: string[];
   excludeKeywords: string[];
+  chatId: string | null;
 }
 
 export const api = {

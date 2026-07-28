@@ -118,6 +118,8 @@ public static class Endpoints
                 ExcludeKeywords = request.ExcludeKeywords ?? [],
                 Condition = request.Condition,
                 Category = request.Category,
+                // Blank means "use the default recipient", so normalise "" to null.
+                ChatId = string.IsNullOrWhiteSpace(request.ChatId) ? null : request.ChatId.Trim(),
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow,
             };

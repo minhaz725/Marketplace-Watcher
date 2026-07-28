@@ -74,6 +74,9 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<string>("Category")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ChatId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Condition")
                         .HasColumnType("TEXT");
 

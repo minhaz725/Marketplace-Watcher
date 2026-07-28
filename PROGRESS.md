@@ -338,6 +338,17 @@ Live failure: `ArgumentOutOfRangeException` from `CdpConnection.Context` (`_brow
 - Watch cards now also show `must include` keywords, which `describeFilters` had been silently omitting.
 - ▶ Verified: create → appears in list → delete → gone, round-tripped against the running API. Typecheck + production build clean; backend `-warnaserror` build, 83/83 tests, and `format --verify-no-changes` all pass.
 
+### Per-watch Telegram recipient
+Different watches can now alert different people — e.g. car listings to a friend, laptops to you.
+- `WatchEntity.ChatId` (`string?`, migration `AddWatchChatId`) — **per-watch override with fallback to the global `Telegram:ChatId`**, the same shape the rest of the config uses. Null/blank normalises to null server-side, so existing watches are unaffected and no backfill was needed.
+- `INotifier.NotifyAsync` gained a `string? chatId`; `TelegramNotifier` resolves `chatId ?? configured default` and now includes the recipient in its failure log, so a "chat not found" names *which* chat.
+- UI: "Send to (Telegram chat id)" field on the create form (blank = default), and each watch card shows `→ <chat id>` or `→ default recipient`.
+- ⚠️ **Operational catch, unchanged from ADR-001:** a bot cannot open a conversation with someone. The recipient must press **Start** on the bot first, then their chat id is readable from `getUpdates`. The form hint says so.
+- ▶ Verified: POST with `chatId: "123456789"` stored it; POST with `chatId: "   "` normalised to `null`. Both throwaway watches deleted afterwards. 83/83 tests, `-warnaserror` build, typecheck and frontend build all clean.
+
+### Watch validation — contradictory keywords
+A real `imac` watch had `imac` in **both** must-include and exclude (pasted in with a macbook exclusion list) and so could never match anything, silently, while looking correctly configured. Now rejected in the form as you type and again server-side, naming the offending keywords. Same guard both sides because client validation is feedback, not enforcement.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 
