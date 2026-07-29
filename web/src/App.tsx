@@ -78,16 +78,19 @@ export default function App() {
       {error && <div className="banner-error">Cannot reach the API — {error}</div>}
 
       <main>
-        <section className="listings">
-          <h2>{selectedWatch === null ? "Listings" : `Listings · ${selectedWatch}`}</h2>
-          <ListingsTable listings={listings} onChanged={() => void refresh()} />
-        </section>
+        {/* Watches come FIRST in the DOM so a phone gets the right order with no CSS at
+            all. Desktop reorders them into the right-hand column via `order`, which is
+            the safer way round: if the CSS ever fails, mobile still reads correctly. */}
         <WatchesPanel
           watches={watches}
           selected={selectedWatch}
           onSelect={setSelectedWatch}
           onChanged={() => void refresh()}
         />
+        <section className="listings">
+          <h2>{selectedWatch === null ? "Listings" : `Listings · ${selectedWatch}`}</h2>
+          <ListingsTable listings={listings} onChanged={() => void refresh()} />
+        </section>
       </main>
     </div>
   );

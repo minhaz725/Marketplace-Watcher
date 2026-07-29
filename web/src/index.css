@@ -110,21 +110,21 @@ button:disabled {
   font-size: 0.875rem;
 }
 
-/* Layout: listings beside the watches panel, stacking on narrow screens */
+/* Mobile-first. The DOM has watches before listings, so a single column already puts
+   them on top with no CSS involved — a phone can't get the wrong order even if these
+   rules fail to load. Desktop opts in to the two-column layout and reorders. */
 main {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: 1fr;
   gap: 1.5rem;
   margin-top: 1.5rem;
 }
 
-@media (max-width: 800px) {
-  main { grid-template-columns: 1fr; }
+@media (min-width: 801px) {
+  main { grid-template-columns: 1fr 260px; }
 
-  /* Stacked on a phone the watches panel would land below a long listings table,
-     effectively out of reach. Pull it above. On desktop it sits in the right column,
-     where source order does not matter. */
-  .watches { order: -1; }
+  .listings { order: 1; }
+  .watches { order: 2; }
 }
 
 /* A wide table scrolls inside its own box, never the page */
