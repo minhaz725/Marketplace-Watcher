@@ -132,6 +132,21 @@ The non-obvious choices are written up as ADRs in [DECISIONS.md](DECISIONS.md):
 
 ## Run it
 
+### Quick start
+
+```bash
+./run.sh
+```
+
+Starts Chrome with remote debugging, the backend, and the frontend, then prints the URLs
+(including the LAN address so you can open it from your phone). Ctrl-C stops everything it
+started — if Chrome was already running it is left alone.
+
+You still need the Telegram secrets set once (step 2 below), and that Chrome window logged in
+to the secondary Facebook account.
+
+### Or start each piece yourself
+
 **1. Start the secondary-account Chrome** (a dedicated profile, logged in to the Facebook account
 you want to watch with — never your primary):
 

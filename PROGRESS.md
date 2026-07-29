@@ -349,6 +349,17 @@ Different watches can now alert different people — e.g. car listings to a frie
 ### Watch validation — contradictory keywords
 A real `imac` watch had `imac` in **both** must-include and exclude (pasted in with a macbook exclusion list) and so could never match anything, silently, while looking correctly configured. Now rejected in the form as you type and again server-side, naming the offending keywords. Same guard both sides because client validation is feedback, not enforcement.
 
+### `run.sh` — one command to start everything
+Starts Chrome (CDP), backend and frontend; prints local + LAN URLs; Ctrl-C tears down what it started.
+- **Only stops Chrome if it started it** — killing a browser the user already had open would close their tabs.
+- Guards worth keeping: refuses to start if `:5000` is taken (naming the exact `pkill` to fix it), and detects the nasty case where Chrome is *already running with that profile but no debug port* — relaunching then just opens a tab in the existing instance and CDP never comes up, which looks like success.
+- ⚠️ **Two real bugs found while testing the script, both worth remembering:**
+  1. **`dotnet run` spawns the app as a separate child process** (`bin/Debug/.../MarketplaceWatcher`), so killing the PID from `$!` left the backend running. Same apphost-naming trap already in the RUNBOOK. Fixed with a recursive `kill_tree` using `pgrep -P`. `npm run dev` → vite has the identical shape.
+  2. A `pkill -f "bin/Debug/..."` fallback **killed the invoking shell**, because `-f` matches any command line *containing* the string — including the shell whose command line mentioned it. Removed rather than patched: it only ran inside `cleanup`, so it could never help in the one case it was for (the script dying *without* running cleanup).
+- Testing gotcha, not a script bug: bash sets `SIGINT` to **ignored** for background jobs in non-interactive shells, and a `trap` cannot override an inherited ignore — so `kill -INT` on a backgrounded `run.sh` does nothing while real Ctrl-C in a terminal works fine. Verified with `SIGTERM` instead.
+- Cleanup is idempotent (`TERM` and `EXIT` both fire).
+- ▶ Verified: all three start; `SIGTERM` → all three stop; cleanup logs once.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 
