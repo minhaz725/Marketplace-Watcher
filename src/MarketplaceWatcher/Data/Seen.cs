@@ -27,4 +27,11 @@ public sealed class Seen
     public int? WatchId { get; set; }
 
     public string? WatchName { get; set; }
+
+    /// <summary>
+    /// When you marked this listing gone (sold, withdrawn, not worth chasing). Null = still
+    /// open. A timestamp rather than a bool because knowing *when* costs nothing extra and
+    /// answers "did I check this recently?".
+    /// </summary>
+    public DateTime? SoldAt { get; set; }
 }

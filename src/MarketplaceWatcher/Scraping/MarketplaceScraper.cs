@@ -13,7 +13,7 @@ public sealed class MarketplaceScraper(
     private const int ScrollWaitMs = 1500;
     private const int FirstCardTimeoutMs = 20_000;
 
-    private static readonly HarvestPolicy Policy = new(maxRounds: 12, stagnantRoundsBeforeStop: 2);
+    private static readonly HarvestPolicy Policy = new(maxRounds: 12, stagnantRoundsBeforeStop: 3);
 
     private CdpConnection? _connection;
 

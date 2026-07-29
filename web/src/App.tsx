@@ -80,7 +80,7 @@ export default function App() {
       <main>
         <section className="listings">
           <h2>{selectedWatch === null ? "Listings" : `Listings · ${selectedWatch}`}</h2>
-          <ListingsTable listings={listings} />
+          <ListingsTable listings={listings} onChanged={() => void refresh()} />
         </section>
         <WatchesPanel
           watches={watches}

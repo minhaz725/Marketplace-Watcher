@@ -9,7 +9,7 @@ public sealed class HarvestPolicy
     private readonly int _maxRounds;
     private readonly int _stagnantRoundsBeforeStop;
 
-    public HarvestPolicy(int maxRounds = 12, int stagnantRoundsBeforeStop = 2)
+    public HarvestPolicy(int maxRounds = 12, int stagnantRoundsBeforeStop = 3)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxRounds, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(stagnantRoundsBeforeStop, 1);

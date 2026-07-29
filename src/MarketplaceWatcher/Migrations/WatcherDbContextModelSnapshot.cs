@@ -47,6 +47,9 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<DateTime>("SeenAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("SoldAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("TEXT");

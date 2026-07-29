@@ -120,6 +120,11 @@ main {
 
 @media (max-width: 800px) {
   main { grid-template-columns: 1fr; }
+
+  /* Stacked on a phone the watches panel would land below a long listings table,
+     effectively out of reach. Pull it above. On desktop it sits in the right column,
+     where source order does not matter. */
+  .watches { order: -1; }
 }
 
 /* A wide table scrolls inside its own box, never the page */
@@ -293,3 +298,10 @@ button.secondary {
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* A listing marked sold stays visible but is struck through and dimmed —
+   the point is to remember you already checked it, not to hide it. */
+tr.sold td { text-decoration: line-through; opacity: 0.45; }
+tr.sold td.sold-cell { text-decoration: none; opacity: 1; }
+
+.sold-cell { width: 1%; white-space: nowrap; text-align: center; }

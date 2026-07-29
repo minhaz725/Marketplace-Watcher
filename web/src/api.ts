@@ -15,6 +15,8 @@ export interface Listing {
   url: string | null;
   watchName: string | null;
   seenAt: string; // ISO 8601 — JSON has no date type, so it arrives as a string
+  /** null = still available; a timestamp = you marked it gone. */
+  soldAt: string | null;
 }
 
 export interface Watch {
@@ -94,6 +96,18 @@ export const api = {
     }
 
     return response.json() as Promise<Watch>;
+  },
+
+  /** Flips the sold flag and returns the new value. */
+  toggleSold: async (signature: string): Promise<string | null> => {
+    const response = await fetch(`${BASE_URL}/api/listings/${signature}/sold`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`Could not update listing: ${response.status}`);
+    }
+    const body = (await response.json()) as { soldAt: string | null };
+    return body.soldAt;
   },
 
   deleteWatch: async (id: number): Promise<void> => {

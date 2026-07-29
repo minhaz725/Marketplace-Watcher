@@ -360,6 +360,14 @@ Starts Chrome (CDP), backend and frontend; prints local + LAN URLs; Ctrl-C tears
 - Cleanup is idempotent (`TERM` and `EXIT` both fire).
 - ▶ Verified: all three start; `SIGTERM` → all three stop; cleanup logs once.
 
+### UI — mark listings sold, and mobile ordering
+- **Mobile fix:** stacked on a phone, the watches panel landed *below* a long listings table and was effectively unreachable. `.watches { order: -1 }` inside the existing `max-width: 800px` query lifts it above. Desktop is a two-column grid where source order is irrelevant, so nothing changes there.
+- **Mark as sold/gone:** each row gets a `×`; clicking strikes the row through and dims it (it stays visible — the point is remembering you already checked it). Clicking the `↩` puts it back.
+- Backed by `Seen.SoldAt` (`DateTime?`, migration `AddSoldAtToSeen`) rather than component state, because the dashboard re-fetches every 10s and in-memory state would vanish on the next tick. A **timestamp not a bool** — knowing *when* costs nothing extra and answers "did I check this recently?".
+- `POST /api/listings/{signature}/sold` **toggles** rather than sets: undoes a misclick, and the client doesn't need to know current state to flip it. Returns the new `soldAt`; 404 for an unknown signature.
+- In-flight toggles tracked as a `Set` of signatures, not a single id, so two quick clicks on different rows don't fight over one piece of state.
+- ▶ Verified: toggle on → timestamp, toggle off → null, unknown signature → 404. 83/83 tests, `-warnaserror` build, typecheck and frontend build clean.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

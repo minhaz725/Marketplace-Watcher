@@ -1,9 +1,30 @@
-import type { Listing } from "../api";
+import { useState } from "react";
+import { api, type Listing } from "../api";
 
-// A component is a function taking one argument (conventionally "props") and returning
-// markup. This one owns no state — it renders whatever it is handed. Components like this
-// are the easy kind: same input, same output, nothing to debug.
-export function ListingsTable({ listings }: { listings: Listing[] }) {
+interface ListingsTableProps {
+  listings: Listing[];
+  onChanged: () => void;
+}
+
+export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
+  // Signatures whose toggle is in flight. Tracking the set rather than a single id means
+  // two quick clicks on different rows don't fight over one piece of state.
+  const [pending, setPending] = useState<Set<string>>(new Set());
+
+  async function toggleSold(listing: Listing) {
+    setPending((prev) => new Set(prev).add(listing.signature));
+    try {
+      await api.toggleSold(listing.signature);
+      onChanged();
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(listing.signature);
+        return next;
+      });
+    }
+  }
+
   if (listings.length === 0) {
     return <p className="empty">No listings yet. Add a watch and hit “Poll now”.</p>;
   }
@@ -26,28 +47,47 @@ export function ListingsTable({ listings }: { listings: Listing[] }) {
           <th>Location</th>
           <th>Watch</th>
           <th>Seen</th>
+          <th>Sold</th>
         </tr>
       </thead>
       <tbody>
         {/* .map turns an array of data into an array of rows. React needs a stable "key"
             per row to tell them apart between renders — signature is our natural id. */}
-        {sorted.map((listing) => (
-          <tr key={listing.signature}>
-            <td>
-              {listing.url ? (
-                <a href={listing.url} target="_blank" rel="noreferrer">
-                  {listing.title}
-                </a>
-              ) : (
-                listing.title
-              )}
-            </td>
-            <td className="price">{formatPrice(listing.price)}</td>
-            <td>{listing.location ?? "—"}</td>
-            <td>{listing.watchName ?? "—"}</td>
-            <td className="muted">{formatSeenAt(listing.seenAt)}</td>
-          </tr>
-        ))}
+        {sorted.map((listing) => {
+          const isSold = listing.soldAt !== null;
+          const isPending = pending.has(listing.signature);
+
+          return (
+            <tr key={listing.signature} className={isSold ? "sold" : undefined}>
+              <td>
+                {listing.url ? (
+                  <a href={listing.url} target="_blank" rel="noreferrer">
+                    {listing.title}
+                  </a>
+                ) : (
+                  listing.title
+                )}
+              </td>
+              <td className="price">{formatPrice(listing.price)}</td>
+              <td>{listing.location ?? "—"}</td>
+              <td>{listing.watchName ?? "—"}</td>
+              <td className="muted">{formatSeenAt(listing.seenAt)}</td>
+              <td className="sold-cell">
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => toggleSold(listing)}
+                  disabled={isPending}
+                  title={isSold ? "Mark as still available" : "Mark as sold / gone"}
+                  aria-label={isSold ? "Mark as still available" : "Mark as sold or gone"}
+                  aria-pressed={isSold}
+                >
+                  {isSold ? "↩" : "×"}
+                </button>
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

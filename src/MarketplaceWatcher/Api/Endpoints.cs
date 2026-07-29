@@ -66,10 +66,27 @@ public static class Endpoints
                     s.Url,
                     s.WatchName,
                     s.SeenAt,
+                    s.SoldAt,
                 })
                 .ToListAsync();
 
             return Results.Ok(listings);
+        });
+
+        // Toggle rather than set: clicking again undoes a misclick, and it keeps the client
+        // from having to know the current state to flip it.
+        app.MapPost("/api/listings/{signature}/sold", async (string signature, WatcherDbContext db) =>
+        {
+            var listing = await db.Seen.FirstOrDefaultAsync(s => s.Signature == signature);
+            if (listing is null)
+            {
+                return Results.NotFound();
+            }
+
+            listing.SoldAt = listing.SoldAt is null ? DateTime.UtcNow : null;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new { signature, soldAt = listing.SoldAt });
         });
 
         app.MapGet("/api/watches", async (WatcherDbContext db) =>
