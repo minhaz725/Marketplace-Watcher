@@ -13,6 +13,13 @@ public sealed class WatchEntity
     public string? Condition { get; set; }
     public string? Category { get; set; }
     /// <summary>
+    /// Only scrape listings posted within this many days. Null falls back to
+    /// <c>Watcher:DaysSinceListed</c> from config (default 1). Widen it for slow-moving
+    /// searches like cars, where a good listing can sit for a week.
+    /// </summary>
+    public int? DaysSinceListed { get; set; }
+
+    /// <summary>
     /// Telegram chat to alert for this watch. Null falls back to <c>Telegram:ChatId</c> from
     /// config, so existing watches keep working unchanged.
     /// </summary>

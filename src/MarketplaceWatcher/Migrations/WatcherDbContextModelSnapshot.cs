@@ -86,6 +86,9 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("DaysSinceListed")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ExcludeKeywords")
                         .IsRequired()
                         .HasColumnType("TEXT");

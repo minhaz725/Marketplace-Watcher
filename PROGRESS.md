@@ -368,6 +368,14 @@ Starts Chrome (CDP), backend and frontend; prints local + LAN URLs; Ctrl-C tears
 - In-flight toggles tracked as a `Set` of signatures, not a single id, so two quick clicks on different rows don't fight over one piece of state.
 - ▶ Verified: toggle on → timestamp, toggle off → null, unknown signature → 404. 83/83 tests, `-warnaserror` build, typecheck and frontend build clean.
 
+### Per-watch `daysSinceListed`
+The recency window was app-wide (`Watcher:DaysSinceListed`, default 1). A car can sit unsold for a week while a cheap laptop goes in an hour, so one global number is wrong for both.
+- `WatchEntity.DaysSinceListed` (`int?`, migration `AddWatchDaysSinceListed`) — per-watch override, **null falls back to the config default**. Same override-with-fallback shape as `ChatId`, so existing watches were unaffected and needed no backfill.
+- `MarketplaceScraper` resolves `watch.DaysSinceListed ?? options.Value.DaysSinceListed`; `SearchUrlBuilder` already took an `int?` so it needed no change.
+- Validated **1–90** on the server (400 with a readable reason) and in the form as you type.
+- UI: "Listed within (days)" field, placeholder `1`; watch cards show `last N days`.
+- ▶ Verified: `daysSinceListed: 7` stored; `0` and `365` both rejected 400. 83/83 tests, `-warnaserror` build, typecheck and frontend build clean.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

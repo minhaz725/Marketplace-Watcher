@@ -114,6 +114,12 @@ function describeFilters(watch: Watch): string {
     parts.push(`must include ${watch.mustIncludeKeywords.join(", ")}`);
   }
 
+  parts.push(
+    watch.daysSinceListed === null
+      ? "last 1 day"
+      : `last ${watch.daysSinceListed} day${watch.daysSinceListed === 1 ? "" : "s"}`,
+  );
+
   if (watch.excludeKeywords.length > 0) {
     parts.push(`excluding ${watch.excludeKeywords.join(", ")}`);
   }

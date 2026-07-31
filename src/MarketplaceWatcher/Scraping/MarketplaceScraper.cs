@@ -45,7 +45,8 @@ public sealed class MarketplaceScraper(
     public async Task<IReadOnlyList<ScrapedCard>> ScrapeAsync(WatchEntity watch, CancellationToken cancellationToken = default)
     {
         var cdp = await GetConnectionAsync();
-        var url = SearchUrlBuilder.Build(watch, options.Value.DaysSinceListed);
+        // Per-watch window wins; otherwise the app-wide default from config.
+        var url = SearchUrlBuilder.Build(watch, watch.DaysSinceListed ?? options.Value.DaysSinceListed);
 
         var page = await cdp.Context.NewPageAsync();
         try

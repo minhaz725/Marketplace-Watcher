@@ -29,6 +29,8 @@ export interface Watch {
   excludeKeywords: string[];
   /** null = the default recipient from config. */
   chatId: string | null;
+  /** null = the app-wide default (1 day). */
+  daysSinceListed: number | null;
   isActive: boolean;
 }
 
@@ -63,6 +65,7 @@ export interface CreateWatchRequest {
   mustIncludeKeywords: string[];
   excludeKeywords: string[];
   chatId: string | null;
+  daysSinceListed: number | null;
 }
 
 export const api = {

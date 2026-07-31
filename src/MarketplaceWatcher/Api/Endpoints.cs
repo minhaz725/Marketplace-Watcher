@@ -111,6 +111,11 @@ public static class Endpoints
                 return Results.BadRequest("Min price cannot be higher than max price.");
             }
 
+            if (request.DaysSinceListed is { } days && (days < 1 || days > 90))
+            {
+                return Results.BadRequest("Days must be between 1 and 90.");
+            }
+
             // A keyword in both lists makes the watch unsatisfiable — every listing is
             // simultaneously required and rejected, so it silently matches nothing forever.
             var contradictions = (request.MustIncludeKeywords ?? [])
@@ -137,6 +142,7 @@ public static class Endpoints
                 Category = request.Category,
                 // Blank means "use the default recipient", so normalise "" to null.
                 ChatId = string.IsNullOrWhiteSpace(request.ChatId) ? null : request.ChatId.Trim(),
+                DaysSinceListed = request.DaysSinceListed,
                 IsActive = true,
                 CreatedAt = DateTimeOffset.UtcNow,
             };

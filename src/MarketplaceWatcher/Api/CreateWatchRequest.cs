@@ -10,4 +10,5 @@ public sealed record CreateWatchRequest(
     string[]? ExcludeKeywords,
     string? Condition,
     string? Category,
-    string? ChatId = null);
+    string? ChatId = null,
+    int? DaysSinceListed = null);

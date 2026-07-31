@@ -14,6 +14,7 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
   const [mustInclude, setMustInclude] = useState("");
   const [exclude, setExclude] = useState("");
   const [chatId, setChatId] = useState("");
+  const [days, setDays] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +49,9 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
           ? "Max price must be a number."
           : min !== null && max !== null && min > max
             ? "Min price can’t be higher than max price."
-            : contradictions.length > 0
+            : days.trim() !== "" && (Number.isNaN(Number(days)) || Number(days) < 1 || Number(days) > 90)
+              ? "Days must be a whole number between 1 and 90."
+              : contradictions.length > 0
               ? `“${contradictions.join(", ")}” is in both must-include and exclude — nothing could ever match.`
               : null;
 
@@ -67,6 +70,7 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
         mustIncludeKeywords: splitKeywords(mustInclude),
         excludeKeywords: splitKeywords(exclude),
         chatId: chatId.trim() === "" ? null : chatId.trim(),
+        daysSinceListed: days.trim() === "" ? null : Number(days),
       });
       onCreated();
     } catch (err) {
@@ -152,6 +156,20 @@ export function WatchForm({ onCancel, onCreated }: WatchFormProps) {
           value={exclude}
           onChange={(e) => setExclude(e.target.value)}
           placeholder="wanted, parts, wrecking"
+          disabled={submitting}
+        />
+      </label>
+
+      <label>
+        Listed within (days)
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={90}
+          value={days}
+          onChange={(e) => setDays(e.target.value)}
+          placeholder="1"
           disabled={submitting}
         />
       </label>
