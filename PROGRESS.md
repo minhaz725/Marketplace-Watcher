@@ -376,6 +376,14 @@ The recency window was app-wide (`Watcher:DaysSinceListed`, default 1). A car ca
 - UI: "Listed within (days)" field, placeholder `1`; watch cards show `last N days`.
 - ▶ Verified: `daysSinceListed: 7` stored; `0` and `365` both rejected 400. 83/83 tests, `-warnaserror` build, typecheck and frontend build clean.
 
+### Standalone executable (`publish.sh`)
+`./publish.sh [rid]` → `dist/<rid>/`. Self-contained single-file build that serves the API **and** the React dashboard from one process; no .NET runtime needed on the target. Cross-publishes from the Mac (`osx-arm64`, `linux-arm64`, `win-x64` all verified to produce the right platform binaries).
+- React build is copied into `wwwroot`; `Program.cs` gained `UseDefaultFiles`/`UseStaticFiles`/`MapFallbackToFile`. The **Worker SDK does not pick up `wwwroot` automatically** the way `Sdk.Web` would, so the `.csproj` includes it explicitly.
+- `EnableCompressionInSingleFile` took it from 243 MB → 100 MB. **Not** trimmed (EF Core model building, the config binder and `System.Text.Json` use reflection the trimmer cannot see) and **not** AOT (EF migrations + Playwright's Node driver rule it out).
+- ⚠️ **`PublishSingleFile` silently drops Playwright's Node driver.** It is a platform executable, not a managed assembly, so it is neither bundled nor left on disk. The result *starts perfectly, serves the dashboard, answers the API* — and fails on the first scrape. **I initially declared the build working on exactly that evidence**, having verified only the web surface; the missing driver was found by inspecting the output rather than by the smoke test. `publish.sh` now restores `.playwright/node/<platform>/` from the build output and **fails the build if no node binary lands**, so this cannot ship silently again.
+- Published builds run in **Production**, where user-secrets are deliberately not read. Secrets must come from env vars (`Telegram__BotToken`, `Telegram__ChatId` — `__` maps to `:`). The binary also keeps its **own `watcher.db`** beside itself.
+- ▶ Verified properly the second time: the published binary scraped live — `Harvested 64 listings in 7 scroll round(s)` with a full funnel line — not just served HTTP.
+
 ## ▶ REMAINING in Phase 11
 Only one item, and it is a verification rather than code: **the resilience failure path has never been exercised live.** Start the app, close the secondary-account Chrome mid-run, and confirm it logs `Watch ... failed this poll; continuing` plus a backoff warning and *keeps running*. Everything else in Phase 11 is done.
 

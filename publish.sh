@@ -19,6 +19,7 @@ OUT="dist/$RID"
 WWWROOT="src/MarketplaceWatcher/wwwroot"
 
 log() { printf '\033[1;34m▸\033[0m %s\n' "$1"; }
+die() { printf '\033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 
 log "Building the React app"
 (cd web && npm ci --silent && npm run build)
@@ -42,6 +43,21 @@ dotnet publish src/MarketplaceWatcher \
   -p:EnableCompressionInSingleFile=true \
   -p:DebugType=none \
   -o "$OUT"
+
+# PublishSingleFile silently drops Playwright's Node driver — it is a platform executable,
+# not a managed assembly, so it is neither bundled nor left on disk. Without it the app
+# starts perfectly, serves the dashboard, and then fails on the first scrape. Restore it
+# from the ordinary build output, which does have the right one for this RID.
+BUILD_NODE="src/MarketplaceWatcher/bin/Release/net10.0/$RID/.playwright/node"
+[[ -d "$BUILD_NODE" ]] || die "Playwright node driver missing from the build at $BUILD_NODE"
+
+log "Restoring Playwright's node driver (single-file publish omits it)"
+mkdir -p "$OUT/.playwright/node"
+cp -R "$BUILD_NODE/." "$OUT/.playwright/node/"
+
+# Fail loudly rather than shipping something that cannot scrape.
+find "$OUT/.playwright/node" -type f -name 'node*' | grep -q . \
+  || die "No node binary landed in $OUT/.playwright/node — the build would not be able to scrape"
 
 SIZE="$(du -sh "$OUT" | cut -f1)"
 

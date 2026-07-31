@@ -245,8 +245,14 @@ dist/osx-arm64/
 └─ appsettings.json
 ```
 
-So it is *nearly* one file: the executable plus a `.playwright` folder. Copy the whole
-directory, not just the binary.
+So it is *nearly* one file: the executable plus a `.playwright` folder. **Copy the whole
+directory, not just the binary** — and note `.playwright` is a dotfile, hidden by default in
+Finder and Explorer.
+
+> `PublishSingleFile` silently drops Playwright's Node driver, because it is a platform
+> executable rather than a managed assembly. Without it the app starts, serves the dashboard,
+> and then fails on the first scrape. `publish.sh` restores it from the build output and
+> fails the build if it is missing.
 
 **Secrets work differently in a published build.** It runs in the Production environment,
 where .NET user-secrets are deliberately not read — they are a development convenience.
