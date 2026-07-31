@@ -225,6 +225,48 @@ the misses.
 **Search radius.** Facebook ignores `radius` in the URL and applies the location saved on your
 account instead. Change it in the Marketplace app, not here. See [DECISIONS.md](DECISIONS.md).
 
+## Build a standalone executable
+
+```bash
+./publish.sh                # this Mac      → dist/osx-arm64/
+./publish.sh linux-arm64    # Raspberry Pi  → dist/linux-arm64/
+./publish.sh win-x64        # Windows       → dist/win-x64/
+```
+
+Produces a **self-contained** build — no .NET runtime needed on the target machine — that
+serves the API *and* the React dashboard from one process on `http://localhost:5000`. The
+React app is built and copied into `wwwroot` as part of the publish.
+
+```
+dist/osx-arm64/
+├─ MarketplaceWatcher      87 MB   the app + .NET runtime
+├─ .playwright/            13 MB   Node driver — cannot be embedded, must ship alongside
+├─ wwwroot/                        the built dashboard
+└─ appsettings.json
+```
+
+So it is *nearly* one file: the executable plus a `.playwright` folder. Copy the whole
+directory, not just the binary.
+
+**Secrets work differently in a published build.** It runs in the Production environment,
+where .NET user-secrets are deliberately not read — they are a development convenience.
+Use environment variables, where `__` maps to the config `:`
+
+```bash
+export Telegram__BotToken="123456:ABC..."
+export Telegram__ChatId="7880135415"
+./MarketplaceWatcher
+```
+
+Chrome still needs to be running with `--remote-debugging-port=9222` before it can scrape,
+and the binary keeps its **own `watcher.db`** in its own folder — it does not share the
+development database.
+
+Two flags are deliberately *not* used: `PublishTrimmed`, because EF Core's model building,
+the config binder and `System.Text.Json` all use reflection the trimmer cannot see and it
+breaks at runtime; and `PublishAot`, which EF Core migrations and Playwright's Node driver
+are not compatible with.
+
 ## Development
 
 ```bash

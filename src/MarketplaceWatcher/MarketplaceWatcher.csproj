@@ -11,6 +11,13 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- This is a Worker SDK project, so wwwroot is NOT picked up automatically the way it
+       would be under Sdk.Web. Include it explicitly, and don't fail when it is absent —
+       it only exists after publish.sh builds the React app into it. -->
+  <ItemGroup>
+    <Content Include="wwwroot\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

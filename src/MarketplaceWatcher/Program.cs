@@ -62,5 +62,15 @@ if (app.Environment.IsDevelopment())
     app.UseCors(DevCorsPolicy);
 }
 
+// Serve the built React app from wwwroot when it exists, so the published binary is the
+// whole product — no Vite process alongside it. Absent in dev (you run Vite instead), so
+// this is a no-op there. publish.sh is what puts the build here.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapWatcherEndpoints();
+
+// Anything not matched by an API route or a real file falls back to the SPA shell.
+app.MapFallbackToFile("index.html");
+
 app.Run();
