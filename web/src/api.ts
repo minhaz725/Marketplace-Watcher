@@ -17,6 +17,8 @@ export interface Listing {
   seenAt: string; // ISO 8601 — JSON has no date type, so it arrives as a string
   /** null = still available; a timestamp = you marked it gone. */
   soldAt: string | null;
+  /** null = not yet asked; a timestamp = you marked it asked / reached out. */
+  contactedAt: string | null;
 }
 
 export interface Watch {
@@ -111,6 +113,18 @@ export const api = {
     }
     const body = (await response.json()) as { soldAt: string | null };
     return body.soldAt;
+  },
+
+  /** Flips the asked/reached flag and returns the new value. */
+  toggleContacted: async (signature: string): Promise<string | null> => {
+    const response = await fetch(`${BASE_URL}/api/listings/${signature}/contacted`, {
+      method: "POST",
+    });
+    if (!response.ok) {
+      throw new Error(`Could not update listing: ${response.status}`);
+    }
+    const body = (await response.json()) as { contactedAt: string | null };
+    return body.contactedAt;
   },
 
   deleteWatch: async (id: number): Promise<void> => {

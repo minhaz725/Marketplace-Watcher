@@ -38,6 +38,9 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<string>("Signature")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("ContactedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Location")
                         .HasColumnType("TEXT");
 

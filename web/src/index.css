@@ -305,3 +305,7 @@ tr.sold td { text-decoration: line-through; opacity: 0.45; }
 tr.sold td.sold-cell { text-decoration: none; opacity: 1; }
 
 .sold-cell { width: 1%; white-space: nowrap; text-align: center; }
+
+/* Asked / reached: a green tick when set. Not struck through with the rest of a sold row. */
+.icon-button.contacted { color: #16a34a; font-weight: 700; }
+.icon-button.contacted:hover { color: #15803d; }

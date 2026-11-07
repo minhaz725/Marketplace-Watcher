@@ -67,6 +67,7 @@ public static class Endpoints
                     s.WatchName,
                     s.SeenAt,
                     s.SoldAt,
+                    s.ContactedAt,
                 })
                 .ToListAsync();
 
@@ -87,6 +88,21 @@ public static class Endpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { signature, soldAt = listing.SoldAt });
+        });
+
+        // Same toggle shape as /sold: tick on, click again to tick off.
+        app.MapPost("/api/listings/{signature}/contacted", async (string signature, WatcherDbContext db) =>
+        {
+            var listing = await db.Seen.FirstOrDefaultAsync(s => s.Signature == signature);
+            if (listing is null)
+            {
+                return Results.NotFound();
+            }
+
+            listing.ContactedAt = listing.ContactedAt is null ? DateTime.UtcNow : null;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new { signature, contactedAt = listing.ContactedAt });
         });
 
         app.MapGet("/api/watches", async (WatcherDbContext db) =>

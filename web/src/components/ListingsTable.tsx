@@ -25,6 +25,22 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
     }
   }
 
+  async function toggleContacted(listing: Listing) {
+    // Prefix the key so a contacted toggle doesn't share a pending slot with a sold toggle.
+    const key = `contacted:${listing.signature}`;
+    setPending((prev) => new Set(prev).add(key));
+    try {
+      await api.toggleContacted(listing.signature);
+      onChanged();
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   if (listings.length === 0) {
     return <p className="empty">No listings yet. Add a watch and hit “Poll now”.</p>;
   }
@@ -47,6 +63,7 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
           <th>Location</th>
           <th>Watch</th>
           <th>Seen</th>
+          <th>Asked</th>
           <th>Sold</th>
         </tr>
       </thead>
@@ -56,6 +73,8 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
         {sorted.map((listing) => {
           const isSold = listing.soldAt !== null;
           const isPending = pending.has(listing.signature);
+          const isContacted = Boolean(listing.contactedAt); // Boolean(): also false for undefined from an older API
+          const isContactPending = pending.has(`contacted:${listing.signature}`);
 
           return (
             <tr key={listing.signature} className={isSold ? "sold" : undefined}>
@@ -72,6 +91,19 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
               <td>{listing.location ?? "—"}</td>
               <td>{listing.watchName ?? "—"}</td>
               <td className="muted">{formatSeenAt(listing.seenAt)}</td>
+              <td className="sold-cell">
+                <button
+                  type="button"
+                  className={isContacted ? "icon-button contacted" : "icon-button"}
+                  onClick={() => toggleContacted(listing)}
+                  disabled={isContactPending}
+                  title={isContacted ? "Clear asked / reached" : "Mark as asked / reached"}
+                  aria-label={isContacted ? "Clear asked or reached" : "Mark as asked or reached"}
+                  aria-pressed={isContacted}
+                >
+                  {isContacted ? "✓" : "○"}
+                </button>
+              </td>
               <td className="sold-cell">
                 <button
                   type="button"

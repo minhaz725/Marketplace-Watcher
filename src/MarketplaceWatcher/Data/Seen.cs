@@ -34,4 +34,10 @@ public sealed class Seen
     /// answers "did I check this recently?".
     /// </summary>
     public DateTime? SoldAt { get; set; }
+
+    /// <summary>
+    /// When you marked this listing as asked / reached out to the seller. Null = not yet.
+    /// Same timestamp-as-bool shape as <see cref="SoldAt"/>; existing rows default to null.
+    /// </summary>
+    public DateTime? ContactedAt { get; set; }
 }
