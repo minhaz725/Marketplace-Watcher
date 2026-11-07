@@ -12,6 +12,17 @@ interface WatchesPanelProps {
 export function WatchesPanel({ watches, selected, onSelect, onChanged }: WatchesPanelProps) {
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  // Ids of watches whose details are open. A Set (not one id) lets several stay open at once.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  function toggleDetails(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   async function handleDelete(watch: Watch) {
     const label = watch.name ?? "this watch";
@@ -58,34 +69,51 @@ export function WatchesPanel({ watches, selected, onSelect, onChanged }: Watches
           {watches.map((watch) => {
             const name = watch.name ?? "(free / match-all)";
             const isSelected = selected === watch.name;
+            const isOpen = expanded.has(watch.id);
 
             return (
-              <li key={watch.id} className="watch-row">
-                {/* A real <button>, not a clickable <div>: focusable and keyboard-operable
-                    for free. Clicking the selected one again clears the filter. */}
-                <button
-                  type="button"
-                  className={isSelected ? "watch-card watch-card-active" : "watch-card"}
-                  aria-pressed={isSelected}
-                  onClick={() => onSelect(isSelected ? null : watch.name)}
-                >
-                  <span className="watch-name">{name}</span>
-                  <span className="muted">{describeFilters(watch)}</span>
-                  <span className="watch-recipient">
-                    → {watch.chatId ?? "default recipient"}
-                  </span>
-                </button>
+              <li key={watch.id}>
+                <div className="watch-row">
+                  {/* A real <button>, not a clickable <div>: focusable and keyboard-operable
+                      for free. Clicking the selected one again clears the filter. */}
+                  <button
+                    type="button"
+                    className={isSelected ? "watch-card watch-card-active" : "watch-card"}
+                    aria-pressed={isSelected}
+                    onClick={() => onSelect(isSelected ? null : watch.name)}
+                  >
+                    <span className="watch-name">{name}</span>
+                  </button>
 
-                <button
-                  type="button"
-                  className="icon-button watch-delete"
-                  onClick={() => handleDelete(watch)}
-                  disabled={deletingId === watch.id}
-                  aria-label={`Stop watching ${name}`}
-                  title="Stop watching"
-                >
-                  ×
-                </button>
+                  <button
+                    type="button"
+                    className="secondary small watch-details-toggle"
+                    onClick={() => toggleDetails(watch.id)}
+                    aria-expanded={isOpen}
+                  >
+                    {isOpen ? "Hide" : "Details"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="icon-button watch-delete"
+                    onClick={() => handleDelete(watch)}
+                    disabled={deletingId === watch.id}
+                    aria-label={`Stop watching ${name}`}
+                    title="Stop watching"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {isOpen && (
+                  <div className="watch-details">
+                    <span className="muted">{describeFilters(watch)}</span>
+                    <span className="watch-recipient">
+                      → {watch.chatId ?? "default recipient"}
+                    </span>
+                  </div>
+                )}
               </li>
             );
           })}

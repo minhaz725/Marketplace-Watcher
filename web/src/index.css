@@ -309,3 +309,15 @@ tr.sold td.sold-cell { text-decoration: none; opacity: 1; }
 /* Asked / reached: a green tick when set. Not struck through with the rest of a sold row. */
 .icon-button.contacted { color: #16a34a; font-weight: 700; }
 .icon-button.contacted:hover { color: #15803d; }
+
+/* Watch details: hidden until the Details button is clicked */
+.watch-details {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+}
+.watch-details > span { display: block; }
+.watch-details-toggle { align-self: center; white-space: nowrap; }
