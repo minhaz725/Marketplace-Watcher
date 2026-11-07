@@ -133,6 +133,18 @@ if [[ ! -d web/node_modules ]]; then
   (cd web && npm ci)
 fi
 
+# This Mac's (managed) firewall blocks incoming connections to the default Homebrew `node`,
+# so the dashboard is unreachable over WiFi. node@22 is on the firewall's allow list, so put
+# it first on PATH for the frontend (vite's `#!/usr/bin/env node` then resolves to it).
+# Falls back to the default node if node@22 isn't installed.
+NODE22_BIN="$(brew --prefix node@22 2>/dev/null)/bin"
+if [[ -x "$NODE22_BIN/node" ]]; then
+  log "Using node@22 for the frontend (firewall-allowed): $("$NODE22_BIN/node" -v)"
+  export PATH="$NODE22_BIN:$PATH"
+else
+  warn "node@22 not found — using default node; WiFi access may be blocked by the firewall"
+fi
+
 log "Starting frontend"
 (cd web && npm run dev) &
 FRONTEND_PID=$!
