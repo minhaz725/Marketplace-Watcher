@@ -105,9 +105,19 @@ public class PollingWorker(
         var interval = TimeSpan.FromSeconds(options.Value.PollIntervalSeconds);
         var allowedLocations = options.Value.AllowedLocations;
 
-        logger.LogInformation(
-            "Polling every {Interval}, aligned to the clock. First poll now, then {NextPoll:HH:mm}.",
-            interval, PollSchedule.NextPollAt(DateTime.Now, interval));
+        if (options.Value.PollOnStartup)
+        {
+            logger.LogInformation(
+                "Polling every {Interval}, aligned to the clock. First poll now, then {NextPoll:HH:mm}.",
+                interval, PollSchedule.NextPollAt(DateTime.Now, interval));
+        }
+        else
+        {
+            logger.LogInformation(
+                "Polling every {Interval}, aligned to the clock. Watcher:PollOnStartup is off — "
+                + "no poll at startup; first scheduled poll {NextPoll:HH:mm} (or click Poll now).",
+                interval, PollSchedule.NextPollAt(DateTime.Now, interval));
+        }
 
         logger.LogInformation(
             allowedLocations.Length > 0
@@ -116,6 +126,13 @@ public class PollingWorker(
             string.Join(", ", allowedLocations));
 
         var consecutiveFailures = 0;
+
+        if (!options.Value.PollOnStartup)
+        {
+            // Wait out the slot exactly as the end of a normal iteration does, so "Poll now"
+            // (PollSignal) still wakes it early.
+            await pollSignal.WaitAsync(PollSchedule.NextDelay(DateTime.Now, interval), stoppingToken);
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

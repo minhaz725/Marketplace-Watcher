@@ -4,6 +4,13 @@ public sealed class WatcherOptions
 {
     public const string Section = "Watcher";
     public int PollIntervalSeconds { get; set; } = 90;
+
+    /// <summary>
+    /// Whether the worker polls every watch immediately on application start. False skips that
+    /// first poll and waits for the next clock-aligned slot (or a "Poll now" click). Scheduled
+    /// polls after that are unaffected.
+    /// </summary>
+    public bool PollOnStartup { get; set; } = true;
     public int DefaultRadiusKm { get; set; } = 5;
     public GeoPoint Location { get; set; } = new();
 

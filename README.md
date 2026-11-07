@@ -202,6 +202,7 @@ The poll loop wakes immediately — no waiting for the interval.
 | Key | Meaning |
 |---|---|
 | `PollIntervalSeconds` | Poll gap, **aligned to the clock** from midnight. `1800` → :00/:30, `3600` → on the hour |
+| `PollOnStartup` | `true` (default) polls every watch as soon as the app starts. `false` skips that first poll; the next scheduled slot or **Poll now** triggers it |
 | `DaysSinceListed` | Only scrape listings this recent (default 1; null disables) |
 | `AllowedLocations` | Place names a listing must match. **Empty disables the filter** |
 
