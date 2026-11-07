@@ -41,6 +41,9 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<DateTime?>("ContactedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("HiddenAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Location")
                         .HasColumnType("TEXT");
 

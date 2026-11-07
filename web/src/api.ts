@@ -127,6 +127,14 @@ export const api = {
     return body.contactedAt;
   },
 
+  /** Hides a listing from the dashboard (soft delete — the row stays so dedup still blocks re-alerts). */
+  deleteListing: async (signature: string): Promise<void> => {
+    const response = await fetch(`${BASE_URL}/api/listings/${signature}`, { method: "DELETE" });
+    if (!response.ok) {
+      throw new Error(`Could not remove listing: ${response.status}`);
+    }
+  },
+
   deleteWatch: async (id: number): Promise<void> => {
     const response = await fetch(`${BASE_URL}/api/watches/${id}`, { method: "DELETE" });
     if (!response.ok) {

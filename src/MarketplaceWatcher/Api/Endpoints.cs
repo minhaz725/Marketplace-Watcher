@@ -47,7 +47,7 @@ public static class Endpoints
         {
             // IQueryable composes before executing: the filter and limit become SQL WHERE and
             // LIMIT, so we never pull the whole table into memory to trim it.
-            var query = db.Seen.AsQueryable();
+            var query = db.Seen.Where(s => s.HiddenAt == null);
 
             if (!string.IsNullOrWhiteSpace(watch))
             {
@@ -103,6 +103,17 @@ public static class Endpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(new { signature, contactedAt = listing.ContactedAt });
+        });
+
+        // Soft delete: hide the row rather than removing it. Dedup is keyed on Signature in this
+        // same table, so deleting it would make the next poll re-alert on a still-live listing.
+        app.MapDelete("/api/listings/{signature}", async (string signature, WatcherDbContext db) =>
+        {
+            var hidden = await db.Seen
+                .Where(s => s.Signature == signature && s.HiddenAt == null)
+                .ExecuteUpdateAsync(set => set.SetProperty(s => s.HiddenAt, DateTime.UtcNow));
+
+            return hidden == 0 ? Results.NotFound() : Results.NoContent();
         });
 
         app.MapGet("/api/watches", async (WatcherDbContext db) =>

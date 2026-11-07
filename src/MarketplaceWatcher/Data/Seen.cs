@@ -40,4 +40,11 @@ public sealed class Seen
     /// Same timestamp-as-bool shape as <see cref="SoldAt"/>; existing rows default to null.
     /// </summary>
     public DateTime? ContactedAt { get; set; }
+
+    /// <summary>
+    /// When you removed this listing from the dashboard. Null = visible. A soft delete: the row
+    /// must stay because dedup is keyed on Signature in this table, so a hard delete would make
+    /// the next poll treat a still-live listing as new and alert on it again.
+    /// </summary>
+    public DateTime? HiddenAt { get; set; }
 }

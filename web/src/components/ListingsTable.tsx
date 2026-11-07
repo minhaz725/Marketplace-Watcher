@@ -41,6 +41,24 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
     }
   }
 
+  async function removeListing(listing: Listing) {
+    // One click away from hiding a row, so confirm first (same as deleting a watch).
+    if (!window.confirm(`Remove “${listing.title}” from the list?`)) return;
+
+    const key = `remove:${listing.signature}`;
+    setPending((prev) => new Set(prev).add(key));
+    try {
+      await api.deleteListing(listing.signature);
+      onChanged();
+    } finally {
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
   if (listings.length === 0) {
     return <p className="empty">No listings yet. Add a watch and hit “Poll now”.</p>;
   }
@@ -65,6 +83,7 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
           <th>Seen</th>
           <th>Asked</th>
           <th>Sold</th>
+          <th>Remove</th>
         </tr>
       </thead>
       <tbody>
@@ -73,6 +92,7 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
         {sorted.map((listing) => {
           const isSold = listing.soldAt !== null;
           const isPending = pending.has(listing.signature);
+          const isRemoving = pending.has(`remove:${listing.signature}`);
           const isContacted = Boolean(listing.contactedAt); // Boolean(): also false for undefined from an older API
           const isContactPending = pending.has(`contacted:${listing.signature}`);
 
@@ -115,6 +135,18 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
                   aria-pressed={isSold}
                 >
                   {isSold ? "↩" : "×"}
+                </button>
+              </td>
+              <td className="sold-cell">
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => removeListing(listing)}
+                  disabled={isRemoving}
+                  title="Remove this listing from the list"
+                  aria-label="Remove this listing from the list"
+                >
+                  🗑
                 </button>
               </td>
             </tr>
