@@ -14,6 +14,7 @@ public class PollingWorker(
     IOptions<WatcherOptions> options,
     IServiceScopeFactory scopeFactory,
     IMarketplaceScraper scraper,
+    TradeMePoller tradeMePoller,
     PollSignal pollSignal,
     WatcherStatus status) : BackgroundService
 {
@@ -258,6 +259,28 @@ public class PollingWorker(
                         pollFailed = true;
                         lastError = $"watch '{watchName}': {ex.Message}";
                         logger.LogError(ex, "Watch {Name} failed this poll; continuing", watchName);
+                    }
+                }
+
+                // Trade Me runs after Facebook, still one page at a time. A failure is isolated
+                // per watch for the same reason as above.
+                foreach (var watch in watches.Where(w => w.TradeMe))
+                {
+                    var watchName = watch.Name ?? "(unnamed)";
+
+                    try
+                    {
+                        allNew.AddRange(await tradeMePoller.PollWatchAsync(watch, db, notifier, stoppingToken));
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        pollFailed = true;
+                        lastError = $"Trade Me '{watchName}': {ex.Message}";
+                        logger.LogError(ex, "Trade Me watch {Name} failed this poll; continuing", watchName);
                     }
                 }
 

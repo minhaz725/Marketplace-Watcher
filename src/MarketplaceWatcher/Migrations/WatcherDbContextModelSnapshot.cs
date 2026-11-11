@@ -25,7 +25,13 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<DateTime>("CheckedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("RegoExpires")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Title")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("WofExpires")
                         .HasColumnType("TEXT");
 
                     b.HasKey("ListingId");
@@ -54,6 +60,10 @@ namespace MarketplaceWatcher.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("SoldAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")
@@ -105,8 +115,14 @@ namespace MarketplaceWatcher.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("MaxOdometerKm")
+                        .HasColumnType("INTEGER");
+
                     b.Property<decimal?>("MaxPrice")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("MinExpiryMonths")
+                        .HasColumnType("INTEGER");
 
                     b.Property<decimal?>("MinPrice")
                         .HasColumnType("TEXT");
@@ -119,6 +135,9 @@ namespace MarketplaceWatcher.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("RadiusKm")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("TradeMe")
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");

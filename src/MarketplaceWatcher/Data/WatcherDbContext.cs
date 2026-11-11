@@ -89,6 +89,7 @@ public sealed class WatcherDbContext(DbContextOptions<WatcherDbContext> options)
                 Url = l.Url,
                 WatchId = watchId,
                 WatchName = watchName,
+                Source = l.Source,
             }));
 
         await SaveChangesAsync(cancellationToken);

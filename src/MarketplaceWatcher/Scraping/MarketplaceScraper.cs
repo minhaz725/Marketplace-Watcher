@@ -6,7 +6,8 @@ namespace MarketplaceWatcher.Scraping;
 
 public sealed class MarketplaceScraper(
     ILogger<MarketplaceScraper> logger,
-    IOptions<WatcherOptions> options) : IMarketplaceScraper, IAsyncDisposable
+    IOptions<WatcherOptions> options,
+    CdpConnectionProvider cdpProvider) : IMarketplaceScraper
 {
     private const string CardSelector = "a[href*='/marketplace/item/']";
     private const int ScrollStepPx = 1600;
@@ -15,36 +16,9 @@ public sealed class MarketplaceScraper(
 
     private static readonly HarvestPolicy Policy = new(maxRounds: 12, stagnantRoundsBeforeStop: 3);
 
-    private CdpConnection? _connection;
-
-    /// <summary>
-    /// Returns a live CDP connection, reconnecting if the cached one has gone stale.
-    ///
-    /// Connecting spins up a Playwright driver process, so the connection is reused across
-    /// polls. But Chrome restarting leaves the cached IBrowser alive with **no contexts**,
-    /// and the old `_connection ??=` never noticed — every poll then failed forever until
-    /// the app itself was restarted.
-    /// </summary>
-    private async Task<CdpConnection> GetConnectionAsync()
-    {
-        if (_connection is { IsUsable: true })
-        {
-            return _connection;
-        }
-
-        if (_connection is not null)
-        {
-            logger.LogWarning("CDP connection went stale (Chrome closed or restarted); reconnecting");
-            await _connection.DisposeAsync();
-            _connection = null;
-        }
-
-        return _connection = await CdpConnection.ConnectAsync();
-    }
-
     public async Task<IReadOnlyList<ScrapedCard>> ScrapeAsync(WatchEntity watch, CancellationToken cancellationToken = default)
     {
-        var cdp = await GetConnectionAsync();
+        var cdp = await cdpProvider.GetAsync();
         // Per-watch window wins; otherwise the app-wide default from config.
         var url = SearchUrlBuilder.Build(watch, watch.DaysSinceListed ?? options.Value.DaysSinceListed);
 
@@ -120,7 +94,7 @@ public sealed class MarketplaceScraper(
 
     public async Task<string?> FetchTitleAsync(string listingId, CancellationToken cancellationToken = default)
     {
-        var cdp = await GetConnectionAsync();
+        var cdp = await cdpProvider.GetAsync();
         var page = await cdp.Context.NewPageAsync();
         try
         {
@@ -141,14 +115,6 @@ public sealed class MarketplaceScraper(
         finally
         {
             await page.CloseAsync();
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_connection is not null)
-        {
-            await _connection.DisposeAsync();
         }
     }
 }

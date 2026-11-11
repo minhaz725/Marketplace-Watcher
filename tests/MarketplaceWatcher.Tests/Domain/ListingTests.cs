@@ -49,3 +49,26 @@ public class ListingTests
         Assert.NotEqual(a.Signature, b.Signature);
     }
 }
+
+public class ListingSourceSignatureTests
+{
+    [Fact]
+    public void A_facebook_signature_is_the_plain_hash_so_stored_rows_still_match()
+    {
+        // Same inputs through the old formula: lowercased title|price|location, SHA-256, hex.
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes("honda fit|3000|auckland"));
+        var legacy = Convert.ToHexString(bytes);
+
+        Assert.Equal(legacy, new MarketplaceWatcher.Domain.Listing("Honda Fit", 3000m, "Auckland", "u").Signature);
+    }
+
+    [Fact]
+    public void The_same_listing_on_trade_me_has_a_different_signature()
+    {
+        var fb = new MarketplaceWatcher.Domain.Listing("Honda Fit", 3000m, "Auckland", "u");
+        var tm = fb with { Source = MarketplaceWatcher.Data.ListingSources.TradeMe };
+
+        Assert.NotEqual(fb.Signature, tm.Signature);
+    }
+}

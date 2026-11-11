@@ -66,10 +66,13 @@ public sealed class TelegramNotifier(
 
         // HTML parse mode: Telegram rejects the whole message if a listing title contains
         // a bare "<" or "&", so every interpolated value gets encoded.
+        var source = listing.Source == Data.ListingSources.TradeMe ? "Trade Me" : "Facebook";
+        var note = string.IsNullOrWhiteSpace(listing.Note) ? "" : $"\n{Encode(listing.Note)}";
+
         return $"""
                 <b>{Encode(listing.Title)}</b>
-                {Encode(price)} · {Encode(listing.Location)}
-                <i>watch: {Encode(watchName)}</i>
+                {Encode(price)} · {Encode(listing.Location)}{note}
+                <i>{Encode(source)} · watch: {Encode(watchName)}</i>
 
                 {Encode(listing.Url)}
                 """;

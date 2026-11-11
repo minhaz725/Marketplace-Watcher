@@ -18,5 +18,12 @@ public sealed class CheckedListing
     /// <summary>The title read from the listing page, or null if it had none either.</summary>
     public string? Title { get; set; }
 
+    /// <summary>
+    /// Trade Me only (key is "tm:{id}"): registration / WOF expiry read from the listing page,
+    /// as the last day of the month shown. Null = the page did not show one.
+    /// </summary>
+    public DateTime? RegoExpires { get; set; }
+    public DateTime? WofExpires { get; set; }
+
     public required DateTime CheckedAt { get; set; }
 }

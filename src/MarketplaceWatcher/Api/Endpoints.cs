@@ -43,7 +43,7 @@ public static class Endpoints
             return Results.Accepted();
         });
 
-        app.MapGet("/api/listings", async (WatcherDbContext db, string? watch, int? limit) =>
+        app.MapGet("/api/listings", async (WatcherDbContext db, string? watch, string? source, int? limit) =>
         {
             // IQueryable composes before executing: the filter and limit become SQL WHERE and
             // LIMIT, so we never pull the whole table into memory to trim it.
@@ -52,6 +52,12 @@ public static class Endpoints
             if (!string.IsNullOrWhiteSpace(watch))
             {
                 query = query.Where(s => s.WatchName == watch);
+            }
+
+            // "Facebook" or "TradeMe" — the dashboard's two tabs. Omitted = both.
+            if (!string.IsNullOrWhiteSpace(source))
+            {
+                query = query.Where(s => s.Source == source);
             }
 
             var listings = await query
@@ -68,6 +74,7 @@ public static class Endpoints
                     s.SeenAt,
                     s.SoldAt,
                     s.ContactedAt,
+                    s.Source,
                 })
                 .ToListAsync();
 

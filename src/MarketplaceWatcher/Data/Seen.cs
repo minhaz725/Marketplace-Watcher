@@ -47,4 +47,10 @@ public sealed class Seen
     /// the next poll treat a still-live listing as new and alert on it again.
     /// </summary>
     public DateTime? HiddenAt { get; set; }
+
+    /// <summary>
+    /// Which marketplace this came from ("Facebook" or "TradeMe"). Drives the dashboard tabs.
+    /// Rows written before Trade Me support default to Facebook via the migration.
+    /// </summary>
+    public string Source { get; set; } = ListingSources.Facebook;
 }

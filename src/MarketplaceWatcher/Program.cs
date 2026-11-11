@@ -47,7 +47,10 @@ builder.Services.AddCors(options => options.AddPolicy(DevCorsPolicy, policy => p
     .WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
     .AllowAnyHeader()
     .AllowAnyMethod()));
+builder.Services.AddSingleton<CdpConnectionProvider>();
 builder.Services.AddSingleton<IMarketplaceScraper, MarketplaceScraper>();
+builder.Services.AddSingleton<ITradeMeScraper, TradeMeScraper>();
+builder.Services.AddSingleton<TradeMePoller>();
 builder.Services.AddHostedService<PollingWorker>();
 
 var app = builder.Build();
