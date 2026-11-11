@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type Listing, type Status, type Watch } from "./api";
+import { api, type Listing, type ListingSource, type Status, type Watch } from "./api";
 import { ListingsTable } from "./components/ListingsTable";
 import { StatusBar } from "./components/StatusBar";
 import { WatchesPanel } from "./components/WatchesPanel";
 
 const REFRESH_MS = 10_000;
+
+const SOURCES: { value: ListingSource; label: string }[] = [
+  { value: "Facebook", label: "Facebook" },
+  { value: "TradeMe", label: "Trade Me" },
+];
 
 export default function App() {
   // useState returns [currentValue, setter]. Calling the setter re-runs this function and
@@ -20,13 +25,17 @@ export default function App() {
   // /api/listings filters on (Seen stores WatchName, denormalized at match time).
   const [selectedWatch, setSelectedWatch] = useState<string | null>(null);
 
+  // Which marketplace's listings the table shows. Facebook first: it is what existed before
+  // Trade Me, and all older listings belong to it.
+  const [source, setSource] = useState<ListingSource>("Facebook");
+
   // useCallback keeps this the same function object between renders, so the useEffect below
   // doesn't see it as "changed" every time and restart its timer.
   const refresh = useCallback(async () => {
     try {
       // All three requests start together rather than waiting in turn.
       const [nextListings, nextWatches, nextStatus] = await Promise.all([
-        api.listings(selectedWatch),
+        api.listings(selectedWatch, source),
         api.watches(),
         api.status(),
       ]);
@@ -37,9 +46,9 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     }
-    // selectedWatch is a dependency: refresh must be rebuilt when it changes, which makes
+    // selectedWatch and source are dependencies: refresh must be rebuilt when it changes, which makes
     // the useEffect below re-run and re-fetch immediately on click.
-  }, [selectedWatch]);
+  }, [selectedWatch, source]);
 
   // useEffect runs code AFTER render, for things outside React's world — here, fetching and
   // a timer. The [refresh] at the end is the dependency list: re-run only if that changes.
@@ -69,6 +78,19 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Marketplace Watcher</h1>
+        <nav className="tabs" aria-label="Marketplace">
+          {SOURCES.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              className={tab.value === source ? "tab tab-active" : "tab"}
+              aria-pressed={tab.value === source}
+              onClick={() => setSource(tab.value)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
       <StatusBar status={status} onPollNow={handlePollNow} polling={polling} />
@@ -88,7 +110,11 @@ export default function App() {
           onChanged={() => void refresh()}
         />
         <section className="listings">
-          <h2>{selectedWatch === null ? "Listings" : `Listings · ${selectedWatch}`}</h2>
+          <h2>
+            {selectedWatch === null
+              ? `Listings · ${source === "TradeMe" ? "Trade Me" : "Facebook"}`
+              : `Listings · ${selectedWatch}`}
+          </h2>
           <ListingsTable listings={listings} onChanged={() => void refresh()} />
         </section>
       </main>

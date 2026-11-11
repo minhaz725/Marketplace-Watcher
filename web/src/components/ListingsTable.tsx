@@ -41,10 +41,26 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
     }
   }
 
-  async function removeListing(listing: Listing) {
-    // One click away from hiding a row, so confirm first (same as deleting a watch).
-    if (!window.confirm(`Remove “${listing.title}” from the list?`)) return;
+  // Signature of the row awaiting a second click. An inline confirm rather than
+  // window.confirm: browsers can suppress native dialogs ("prevent this page from creating
+  // additional dialogs"), which made the button silently do nothing.
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
 
+  function requestRemove(listing: Listing) {
+    if (confirmingRemove !== listing.signature) {
+      setConfirmingRemove(listing.signature);
+      // Disarm after a few seconds so a stray first click doesn't leave it primed.
+      window.setTimeout(
+        () => setConfirmingRemove((current) => (current === listing.signature ? null : current)),
+        3000,
+      );
+      return;
+    }
+    setConfirmingRemove(null);
+    void removeListing(listing);
+  }
+
+  async function removeListing(listing: Listing) {
     const key = `remove:${listing.signature}`;
     setPending((prev) => new Set(prev).add(key));
     try {
@@ -140,13 +156,17 @@ export function ListingsTable({ listings, onChanged }: ListingsTableProps) {
               <td className="sold-cell">
                 <button
                   type="button"
-                  className="icon-button"
-                  onClick={() => removeListing(listing)}
+                  className={confirmingRemove === listing.signature ? "icon-button danger" : "icon-button"}
+                  onClick={() => requestRemove(listing)}
                   disabled={isRemoving}
-                  title="Remove this listing from the list"
+                  title={
+                    confirmingRemove === listing.signature
+                      ? "Click again to remove"
+                      : "Remove this listing from the list"
+                  }
                   aria-label="Remove this listing from the list"
                 >
-                  🗑
+                  {confirmingRemove === listing.signature ? "Sure?" : "🗑"}
                 </button>
               </td>
             </tr>

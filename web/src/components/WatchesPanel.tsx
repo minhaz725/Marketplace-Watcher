@@ -148,6 +148,13 @@ function describeFilters(watch: Watch): string {
       : `last ${watch.daysSinceListed} day${watch.daysSinceListed === 1 ? "" : "s"}`,
   );
 
+  if (watch.tradeMe) {
+    const rules = ["Trade Me"];
+    if (watch.maxOdometerKm !== null) rules.push(`≤${watch.maxOdometerKm.toLocaleString()} km`);
+    if (watch.minExpiryMonths !== null) rules.push(`WOF & rego >${watch.minExpiryMonths} mo`);
+    parts.push(rules.join(", "));
+  }
+
   if (watch.excludeKeywords.length > 0) {
     parts.push(`excluding ${watch.excludeKeywords.join(", ")}`);
   }

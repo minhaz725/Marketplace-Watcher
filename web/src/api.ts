@@ -19,7 +19,11 @@ export interface Listing {
   soldAt: string | null;
   /** null = not yet asked; a timestamp = you marked it asked / reached out. */
   contactedAt: string | null;
+  /** Which marketplace it came from; drives the two dashboard tabs. */
+  source: ListingSource;
 }
+
+export type ListingSource = "Facebook" | "TradeMe";
 
 export interface Watch {
   id: number;
@@ -33,6 +37,12 @@ export interface Watch {
   chatId: string | null;
   /** null = the app-wide default (1 day). */
   daysSinceListed: number | null;
+  /** Also searched on Trade Me Motors. */
+  tradeMe: boolean;
+  /** Trade Me only: max odometer in km, or null for no limit. */
+  maxOdometerKm: number | null;
+  /** Trade Me only: WOF and rego must run more than this many months, or null for no check. */
+  minExpiryMonths: number | null;
   isActive: boolean;
 }
 
@@ -71,10 +81,11 @@ export interface CreateWatchRequest {
 }
 
 export const api = {
-  listings: (watch?: string | null, limit = 100) => {
+  listings: (watch?: string | null, source?: ListingSource, limit = 100) => {
     // encodeURIComponent so a watch name with spaces or "&" survives the query string.
     const watchParam = watch ? `&watch=${encodeURIComponent(watch)}` : "";
-    return get<Listing[]>(`/api/listings?limit=${limit}${watchParam}`);
+    const sourceParam = source ? `&source=${source}` : "";
+    return get<Listing[]>(`/api/listings?limit=${limit}${watchParam}${sourceParam}`);
   },
   watches: () => get<Watch[]>("/api/watches"),
   status: () => get<Status>("/api/status"),
